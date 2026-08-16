@@ -138,7 +138,7 @@ def utcnow() -> str:
 
 def connect(db_path: str | Path) -> sqlite3.Connection:
     """Open SQLite with WAL and sensible pragmas."""
-    conn = sqlite3.connect(str(db_path), timeout=10)
+    conn = sqlite3.connect(str(db_path), timeout=10, check_same_thread=False)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA journal_mode=WAL")
     conn.execute("PRAGMA busy_timeout=5000")

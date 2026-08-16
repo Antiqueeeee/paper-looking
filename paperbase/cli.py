@@ -135,6 +135,11 @@ def build_parser() -> argparse.ArgumentParser:
     p_ask.add_argument("--paper", help="single paper id")
     p_ask.add_argument("--papers", nargs="+", help="compare multiple paper ids")
     p_ask.set_defaults(func=cmd_ask)
+
+    p_web = sub.add_parser("web", help="start the local web server")
+    p_web.add_argument("--host", default=None)
+    p_web.add_argument("--port", type=int, default=None)
+    p_web.set_defaults(func=cmd_web)
     return parser
 
 
@@ -184,6 +189,20 @@ def cmd_ask(args) -> int:
             print("  " + c)
     print(f"\nconfidence={answer.confidence} tool_calls={answer.tool_calls} tokens={answer.prompt_tokens + answer.completion_tokens}")
     return 0 if answer.answer else 1
+
+
+def cmd_web(args) -> int:
+    config = load_config(args.config)
+    access = config.get("access", {})
+    import uvicorn
+
+    uvicorn.run(
+        "paperbase.web.app:app",
+        host=args.host or access.get("bind_host", "127.0.0.1"),
+        port=int(args.port or access.get("bind_port", 8000)),
+        workers=1,
+    )
+    return 0
 
 
 def main(argv: list[str] | None = None) -> int:

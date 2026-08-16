@@ -1,0 +1,81 @@
+"""Phase 6 tests: FastAPI endpoints."""
+from __future__ import annotations
+
+import json
+from pathlib import Path
+
+import pytest
+from fastapi.testclient import TestClient
+
+from paperbase.config import load_config
+from paperbase.db import init_db, set_parse_status, upsert_paper
+from paperbase.paths import PaperPaths
+
+
+@pytest.fixture()
+def client(tmp_path):
+    data_dir = tmp_path / "data"
+    cfg_path = tmp_path / "config.toml"
+    cfg_path.write_text(f'[paths]\ndata_dir = "{data_dir}"\n', encoding="utf-8")
+    # Pre-populate DB used by the app.
+    paths = PaperPaths(data_dir)
+    paths.ensure_dirs()
+    conn = init_db(paths.db_path)
+    upsert_paper(conn, {
+        "id": "2026.acl-long.1", "source": "acl", "title": "GraphRAG for KBQA",
+        "abstract": "retrieval augmented generation", "year": 2026, "venue": "acl-long",
+        "url": "https://x/1", "pdf_url": "https://x/1.pdf", "tags": ["rag"],
+    })
+    conn.close()
+
+    from paperbase.web.app import create_app
+    app = create_app(str(cfg_path))
+    with TestClient(app) as c:
+        c.cfg_path = str(cfg_path)
+        yield c
+
+
+def test_health_and_stats(client):
+    r = client.get("/api/health")
+    assert r.status_code == 200
+    assert r.json()["papers"] == 1
+    r = client.get("/api/stats")
+    assert r.status_code == 200
+    assert r.json()["by_tag"]["rag"] == 1
+
+
+def test_paper_search_and_detail(client):
+    r = client.get("/api/papers", params={"q": "GraphRAG", "tag": "rag"})
+    assert r.status_code == 200
+    assert r.json()["total"] == 1
+    assert r.json()["items"][0]["id"] == "2026.acl-long.1"
+
+    r = client.get("/api/papers/2026.acl-long.1")
+    assert r.json()["title"] == "GraphRAG for KBQA"
+
+
+def test_queue_and_ask_without_parsed(client):
+    r = client.post("/api/queue", json={"ids": ["2026.acl-long.1"]})
+    assert r.status_code == 200
+    assert r.json()["queued"] == 1
+    # No parsed markdown: answer should be honest and must not require LLM key.
+    r = client.post("/api/ask", json={"question": "方法是什么？", "mode": "paper", "paper_ids": ["2026.acl-long.1"]})
+    assert r.status_code == 200
+    assert r.json()["confidence"] == 0.0
+    assert "尚未解析" in r.json()["answer"]
+
+
+def test_upload_and_reader_flow(client, tmp_path):
+    pdf = tmp_path / "x.pdf"
+    pdf.write_bytes(b"%PDF-1.4\n" + b"x" * 300)
+    r = client.post(
+        "/api/upload",
+        files={"file": ("x.pdf", open(pdf, "rb"), "application/pdf")},
+        data={"title": "Manual Paper"},
+    )
+    assert r.status_code == 200
+    paper_id = r.json()["id"]
+    assert paper_id.startswith("manual:")
+    # Reader should 404 before parsing, not 500.
+    r = client.get(f"/reader/{paper_id}")
+    assert r.status_code == 404
