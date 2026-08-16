@@ -47,7 +47,8 @@ button[disabled],.btn[disabled]{opacity:.45;cursor:not-allowed}
 .status-pill{display:inline-block;background:#eef2ff;color:#3730a3;border-radius:99px;padding:.2rem .7rem;font-size:.85rem;margin:.3rem .5rem .3rem 0}
 
 /* paper list */
-.paper-check{display:inline-flex;align-items:center;gap:.3rem;font-size:.78rem;color:var(--muted);margin-bottom:.2rem}
+.paper-check{display:none;align-items:center;gap:.3rem;font-size:.78rem;color:var(--muted);margin-bottom:.2rem}
+.batch-mode .paper-check{display:inline-flex}
 .paper-check input{width:auto;min-height:22px}
 .paper-card,.paper{border-bottom:1px solid var(--border);padding:.85rem 0}
 .paper-card:last-child,.paper:last-child{border-bottom:0}

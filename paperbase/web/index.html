@@ -42,6 +42,7 @@
           <select id="status" onchange="searchPapers()"><option value="">全部状态</option><option value="new">新收录</option><option value="in_queue">待读队列</option><option value="reading">在读</option><option value="done">已读</option><option value="later">稍后</option><option value="ignored">不感兴趣</option></select>
         </div>
       </details>
+      <button id="batchModeBtn" class="ghost" onclick="toggleBatchMode()">批量选择</button>
       <div id="batchBar" style="display:none;margin:.5rem 0">
         <button class="btn" onclick="batchIgnore()">不感兴趣（<span id="batchCount">0</span>）</button>
         <button class="ghost" onclick="clearBatch()">取消选择</button>
@@ -143,6 +144,11 @@ async function searchPapers(){
         <div class="actions">${actions}</div>
       </div>`}).join('') || '<p class="muted">没有结果</p>';
   }catch(e){toast('搜索失败：'+e.message)}
+}
+function toggleBatchMode(){
+  const on=document.getElementById('papers').classList.toggle('batch-mode');
+  $('batchModeBtn').textContent=on?'退出批量选择':'批量选择';
+  if(!on)clearBatch();
 }
 function selectedIds(){return [...document.querySelectorAll('#paperList input[type=checkbox]:checked')].map(c=>c.value)}
 function updateBatch(){
