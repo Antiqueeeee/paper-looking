@@ -13,7 +13,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Iterable, Mapping
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 
 SCHEMA_V1 = """
 CREATE TABLE IF NOT EXISTS meta (
@@ -115,6 +115,18 @@ CREATE TABLE IF NOT EXISTS cost_events (
 );
 """
 
+SCHEMA_V2 = """
+CREATE TABLE IF NOT EXISTS translation_cache (
+    paper_id   TEXT NOT NULL,
+    kind       TEXT NOT NULL,
+    input_hash TEXT NOT NULL,
+    output     TEXT NOT NULL,
+    model      TEXT NOT NULL DEFAULT '',
+    created_at TEXT NOT NULL,
+    PRIMARY KEY(paper_id, kind)
+);
+"""
+
 
 def utcnow() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="seconds")
@@ -136,8 +148,12 @@ def migrate(conn: sqlite3.Connection) -> int:
     version = conn.execute("PRAGMA user_version").fetchone()[0]
     if version < 1:
         conn.executescript(SCHEMA_V1)
-        conn.execute(f"PRAGMA user_version={SCHEMA_VERSION}")
-        version = SCHEMA_VERSION
+        version = 1
+    if version < 2:
+        conn.executescript(SCHEMA_V2)
+        version = 2
+    if version:
+        conn.execute(f"PRAGMA user_version={version}")
     conn.commit()
     return version
 

@@ -6,8 +6,9 @@ import sys
 from pathlib import Path
 
 from paperbase.config import load_config
-from paperbase.db import init_db
+from paperbase.db import init_db, utcnow
 from paperbase.paths import PaperPaths
+from paperbase.pipeline.digest import build_daily_digest, queue_papers
 from paperbase.sources import fetch_source
 from paperbase.sources.import_legacy import import_legacy
 
@@ -55,6 +56,40 @@ def cmd_fetch(args) -> int:
     return rc
 
 
+def cmd_today(args) -> int:
+    config, paths, conn = _open_db(args)
+    client = None
+    if args.no_translate:
+        translate = False
+    else:
+        translate = True
+    result = build_daily_digest(conn, config, paths, client=client, translate=translate)
+    print(result.message)
+    if result.path:
+        print("digest:", result.path)
+    elif result.baseline:
+        print("提示：后续每日新增论文会从今天之后开始纳入早报。")
+    return 0
+
+
+def cmd_queue(args) -> int:
+    _, _, conn = _open_db(args)
+    if args.remove:
+        ids = args.ids
+        if ids:
+            placeholders = ",".join("?" for _ in ids)
+            conn.execute(
+                f"UPDATE papers SET status='new', updated_at=? WHERE id IN ({placeholders})",
+                (utcnow(), *ids),
+            )
+            conn.commit()
+        print(f"removed from queue: {len(ids)}")
+        return 0
+    changed = queue_papers(conn, args.ids)
+    print(f"queued: {changed} papers")
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="paper", description="personal paper library")
     parser.add_argument("--config", help="TOML config path (or PAPERBASE_CONFIG)")
@@ -69,6 +104,15 @@ def build_parser() -> argparse.ArgumentParser:
     p_fetch.add_argument("--sources", nargs="+", choices=["acl", "openalex", "arxiv"])
     p_fetch.add_argument("--since", help="ISO datetime lower bound (optional)")
     p_fetch.set_defaults(func=cmd_fetch)
+
+    p_today = sub.add_parser("today", help="generate/print today's digest")
+    p_today.add_argument("--no-translate", action="store_true", help="skip metadata translation")
+    p_today.set_defaults(func=cmd_today)
+
+    p_queue = sub.add_parser("queue", help="add/remove papers to/from reading queue")
+    p_queue.add_argument("ids", nargs="+", help="paper ids")
+    p_queue.add_argument("--remove", action="store_true", help="remove from queue")
+    p_queue.set_defaults(func=cmd_queue)
     return parser
 
 
