@@ -280,6 +280,13 @@ def build_scheduler(config: dict, conn, paths: PaperPaths):
 
 def main_loop(config: dict, paths: PaperPaths) -> None:
     conn = init_db(paths.db_path)
+    # Drain anything queued before waiting for the next scheduler tick.
+    try:
+        processed = run_task_loop(conn, config, paths)
+        if processed:
+            logger.info("startup task drain processed %s task(s)", processed)
+    except Exception:
+        logger.exception("startup task drain failed")
     scheduler = build_scheduler(config, conn, paths)
     scheduler.start()
     logger.info("worker started: daily=%s db=%s", config.get("fetch", {}).get("schedule"), paths.db_path)
