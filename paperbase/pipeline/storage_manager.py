@@ -21,16 +21,20 @@ def make_object_store(config: dict, paths: PaperPaths):
     if kind in ("s3", "cos", "oss"):
         try:
             import boto3
+            from botocore.client import Config as BotoConfig
         except ImportError as exc:
             raise StorageError("boto3 is required for s3/cos/oss object storage") from exc
         import os
 
-        return boto3.client(
-            "s3",
-            endpoint_url=storage_cfg.get("endpoint_url") or None,
-            aws_access_key_id=os.environ.get(storage_cfg.get("access_key_env", "S3_ACCESS_KEY"), ""),
-            aws_secret_access_key=os.environ.get(storage_cfg.get("secret_key_env", "S3_SECRET_KEY"), ""),
-        )
+        force_path_style = bool(storage_cfg.get("force_path_style", kind in ("oss", "cos")))
+        client_kwargs = {
+            "endpoint_url": storage_cfg.get("endpoint_url") or None,
+            "aws_access_key_id": os.environ.get(storage_cfg.get("access_key_env", "S3_ACCESS_KEY"), ""),
+            "aws_secret_access_key": os.environ.get(storage_cfg.get("secret_key_env", "S3_SECRET_KEY"), ""),
+        }
+        if force_path_style:
+            client_kwargs["config"] = BotoConfig(s3={"addressing_style": "path"})
+        return boto3.client("s3", **client_kwargs)
     raise StorageError(f"unknown object_store: {kind!r}")
 
 

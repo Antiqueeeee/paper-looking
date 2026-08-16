@@ -3,31 +3,18 @@ from __future__ import annotations
 
 import hashlib
 import json
-import os
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Iterable
 
 from paperbase.db import utcnow
-from paperbase.llm import OpenAICompatibleClient
 
 
 def make_llm_client(config: dict, conn=None):
-    llm_cfg = config.get("llm", {})
-    api_key = os.environ.get(llm_cfg.get("api_key_env", "OPENAI_API_KEY"), "")
-    if not api_key:
-        raise RuntimeError(
-            f"LLM API key not set: export {llm_cfg.get('api_key_env', 'OPENAI_API_KEY')}"
-        )
-    cost_callback = make_cost_logger(conn) if conn is not None else None
-    return OpenAICompatibleClient(
-        base_url=llm_cfg.get("base_url", "https://api.openai.com/v1"),
-        api_key=api_key,
-        model=llm_cfg.get("model", "gpt-4o-mini"),
-        timeout_seconds=float(llm_cfg.get("timeout_seconds", 120)),
-        max_retries=int(llm_cfg.get("max_retries", 2)),
-        cost_callback=cost_callback,
-    )
+    """Build the configured provider client (DeepSeek default)."""
+    from paperbase.llm_providers import build_llm_client
+
+    return build_llm_client(config, conn)
 
 
 def make_cost_logger(conn):

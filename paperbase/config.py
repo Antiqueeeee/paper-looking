@@ -26,10 +26,11 @@ DEFAULTS: dict[str, Any] = {
         "top_n_per_tag": 30,
     },
     "llm": {
-        "base_url": "https://api.openai.com/v1",
-        "api_key_env": "OPENAI_API_KEY",
-        "model": "gpt-4o-mini",
-        "reasoning_model": "",
+        "provider": "deepseek",
+        "base_url": "https://api.deepseek.com/v1",
+        "api_key_env": "DEEPSEEK_API_KEY",
+        "model": "deepseek-chat",
+        "reasoning_model": "deepseek-reasoner",
         "timeout_seconds": 120,
         "max_retries": 2,
     },
@@ -63,6 +64,7 @@ DEFAULTS: dict[str, Any] = {
         "bucket": "",
         "access_key_env": "S3_ACCESS_KEY",
         "secret_key_env": "S3_SECRET_KEY",
+        "force_path_style": False,
     },
     "dci": {
         "max_tool_calls": 30,

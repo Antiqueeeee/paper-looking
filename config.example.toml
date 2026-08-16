@@ -56,12 +56,22 @@ hot_quota_gb = 6                    # 本地热 PDF 上限，超过后 LRU 转�
 cache_quota_gb = 1
 disk_warn_ratio = 0.80              # 磁盘用量 80% 告警
 disk_block_ratio = 0.90             # 磁盘用量 90% 熔断下载/翻译
-object_store = "filesystem"         # filesystem 开发用；生产可改为 s3/cos
+
+# 当前先存本地，代码路径与对象存储完全一致。
+# 后续迁移到阿里云 OSS 时改为：
+#   object_store = "oss"
+#   endpoint_url = "https://oss-cn-hangzhou.aliyuncs.com"
+#   bucket = "your-bucket"
+#   access_key_env = "OSS_ACCESS_KEY_ID"
+#   secret_key_env = "OSS_ACCESS_KEY_SECRET"
+#   force_path_style = true
+object_store = "filesystem"
 object_root = "./data/cold"
 endpoint_url = ""
 bucket = ""
 access_key_env = "S3_ACCESS_KEY"
 secret_key_env = "S3_SECRET_KEY"
+force_path_style = false
 
 [dci]
 max_tool_calls = 30                 # 单次全库问答工具调用上限

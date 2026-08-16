@@ -49,7 +49,11 @@ paper doctor                # 环境/数据检查
 ## 配置
 
 复制 `config.example.toml` 为 `config.toml`，或设置 `PAPERBASE_CONFIG` 环境变量。
-关键配置：数据目录、LLM API、MinerU API、每日预算、磁盘阈值、对象存储。
+
+- LLM 默认 DeepSeek：`export DEEPSEEK_API_KEY=...`；切换 provider 只改 `[llm] provider`
+- MinerU：`export MINERU_API_KEY=...`（只从环境变量读取）
+- 对象存储：默认本地 `filesystem`，后续可切 `oss` / `s3`
+- 每日预算、磁盘阈值均在配置中
 
 ## 测试
 

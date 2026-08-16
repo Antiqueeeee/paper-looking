@@ -40,7 +40,35 @@ sudo systemctl daemon-reload
 sudo systemctl enable --now paper-web paper-worker
 ```
 
-访问方式：仅监听 `127.0.0.1:8000`，通过 Tailscale 或 Cloudflare Tunnel 访问，不对公网开端口。
+访问方式：服务只监听 `127.0.0.1:8000`，不对公网开端口。
+
+### 推荐：Tailscale（个人首选）
+
+```bash
+curl -fsSL https://tailscale.com/install.sh | sh
+sudo tailscale up
+# 手机/电脑安装 Tailscale 后访问：
+# http://<tailscale-ip>:8000
+```
+
+优点：无公网端口、无域名/备案要求、端到端加密、各端体验一致。
+
+### 备选：Cloudflare Tunnel（浏览器直接访问）
+
+```bash
+# 需要你有一个域名托管在 Cloudflare
+cloudflared tunnel login
+cloudflared tunnel create paperbase
+cloudflared tunnel route dns paperbase paper.example.com
+cloudflared tunnel run --url http://127.0.0.1:8000 paperbase
+```
+
+优点：手机浏览器直接打开域名，无需安装客户端；大陆访问速度需实测。
+
+### 不建议
+
+- 不建议直接对公网开放 `8000` 端口；
+- 阿里云大陆 ECS 使用 80/443 域名访问通常涉及 ICP 备案，Tailscale/Tunnel 可绕过这个流程。
 
 ## 4. 初始化与验收
 
