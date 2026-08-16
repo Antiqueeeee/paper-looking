@@ -1,0 +1,75 @@
+# Personal paper library configuration.
+# Copy to config.toml (or set PAPERBASE_CONFIG=/path/to/config.toml).
+# Every key is optional; missing keys fall back to paperbase.config.DEFAULTS.
+
+[paths]
+data_dir = "./data"                 # SQLite + md + pdf 的根目录
+
+[fetch]
+schedule = "07:30"                  # 每日定时抓取时间，支持 cron 表达式
+sources = ["acl", "openalex"]       # 可选：acl / openalex / arxiv
+years = [2024, 2025, 2026]          # ACL 抓取年份范围
+concurrency = 4
+
+[digest]
+due_time = "08:00"                  # 早报最晚生成时间
+top_n_per_tag = 30                  # 每个标签最多展示篇数
+
+[llm]
+base_url = "https://api.openai.com/v1"  # 也兼容 DeepSeek/Qwen/GLM 等
+api_key_env = "OPENAI_API_KEY"
+model = "gpt-4o-mini"               # 翻译/普通问答模型
+reasoning_model = ""                # 留空则使用 model
+timeout_seconds = 120
+max_retries = 2
+
+[translation]
+meta_batch_size = 5                 # 标题/摘要翻译批大小
+full_chunk_min_chars = 4000
+full_chunk_max_chars = 8000
+keep_terms = ["GraphRAG", "KBQA", "RAG", "entity alignment", "LLM"]
+
+[mineru]
+base_url = ""                       # MinerU API base URL，例如 https://mineru.net/api/v4
+api_key_env = "MINERU_API_KEY"
+poll_interval_seconds = 5
+max_poll_seconds = 3600
+max_concurrent = 2
+min_md_chars = 200                  # 解析结果最少正文字符数
+
+[pdf]
+max_upload_mb = 100
+download_timeout_seconds = 120
+download_retries = 2
+hot_quota_gb = 6                    # 本地热 PDF 上限，超过后 LRU 转冷
+
+[storage]
+cache_quota_gb = 1
+disk_warn_ratio = 0.80              # 磁盘用量 80% 告警
+disk_block_ratio = 0.90             # 磁盘用量 90% 熔断下载/翻译
+object_store = "filesystem"         # filesystem 开发用；生产可改为 s3/cos
+object_root = "./data/cold"
+endpoint_url = ""
+bucket = ""
+access_key_env = "S3_ACCESS_KEY"
+secret_key_env = "S3_SECRET_KEY"
+
+[dci]
+max_tool_calls = 30                 # 单次全库问答工具调用上限
+tool_output_chars = 12000           # 单次工具输出截断字符数
+corpus_readonly = true
+
+[budgets]
+translate_daily_tokens = 5000000
+translate_monthly_tokens = 100000000
+qa_daily_tokens = 1000000
+parse_daily_count = 50
+
+[alerts]
+webhook_url = ""                    # 钉钉/飞书/企业微信/Slack webhook
+consecutive_fetch_failures = 3
+
+[access]
+token = ""                          # 访问令牌；留空表示仅内网访问
+bind_host = "127.0.0.1"
+bind_port = 8000
