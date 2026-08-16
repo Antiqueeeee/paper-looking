@@ -73,6 +73,23 @@ def _has_pdf(paper: dict) -> bool:
     return bool(local and Path(local).exists()) or bool(paper.get("object_key"))
 
 
+def _pdf_panel(paper_id: str, paper: dict) -> str:
+    if not _has_pdf(paper):
+        return ""
+    return f"""
+    <details id="pdf-panel" class="ask-panel">
+      <summary>📄 查看原 PDF</summary>
+      <iframe class="pdf-frame" src="/reader/{paper_id}/pdf" title="原 PDF"></iframe>
+      <p class="hint">如果手机浏览器不支持内嵌预览，请点 <a href="/reader/{paper_id}/pdf" target="_blank">在新窗口打开 PDF</a>。</p>
+    </details>
+    <script>
+    if (new URLSearchParams(location.search).get('pdf') === '1') {{
+      const p = document.getElementById('pdf-panel');
+      if (p) {{ p.open = true; p.scrollIntoView({{behavior:'smooth'}}); }}
+    }}
+    </script>"""
+
+
 def _status_widget(paper: dict) -> str:
     """Read-status controls embedded in the reader page."""
     pid = json.dumps(paper["id"], ensure_ascii=False)
@@ -487,10 +504,10 @@ def create_app(config_path: str | None = None) -> FastAPI:
                 f"<title>{html_mod.escape(paper['title'])}</title><link rel='stylesheet' href='/static/style.css'></head><body>"
                 "<header class='topbar one-line'><div class='brand'><a href='/'>📚 PaperBase</a></div>"
                 f"<div class='nav-links'><a class='btn ghost' href='/'>返回</a><a class='btn ghost' href='?raw=0&lang={lang}'>渲染版</a>"
-                + (f"<a class='btn ghost' href='/reader/{paper_id}/pdf' target='_blank'>原 PDF</a>" if _has_pdf(paper) else "")
+                + (f"<a class='btn ghost' href='?pdf=1#pdf-panel'>原 PDF</a>" if _has_pdf(paper) else "")
                 + "</div></header>"
                 f"<main class='container'><div class='card'><h1>{html_mod.escape(paper['title'])}</h1>"
-                f"<p>{_status_widget(paper)}</p><pre class='reader-raw'>{body}</pre></div></main></body></html>"
+                f"<p>{_status_widget(paper)}</p>{_pdf_panel(paper_id, paper)}<pre class='reader-raw'>{body}</pre></div></main></body></html>"
             )
         body_html = md.markdown(text, extensions=["tables", "fenced_code"])
         paper_id_json = json.dumps(paper["id"], ensure_ascii=False)
@@ -551,10 +568,10 @@ def create_app(config_path: str | None = None) -> FastAPI:
             f"<a class='btn ghost' href='?lang=en'>English</a>"
             f"<a class='btn ghost' href='?lang=zh'>中文</a>"
             f"<a class='btn ghost' href='?raw=1'>原文行号</a>"
-            + (f"<a class='btn ghost' href='/reader/{paper_id}/pdf' target='_blank'>原 PDF</a>" if _has_pdf(paper) else "")
+            + (f"<a class='btn ghost' href='?pdf=1#pdf-panel'>原 PDF</a>" if _has_pdf(paper) else "")
             + "</div></header>"
             f"<main class='container'><div class='card'><h1>{html_mod.escape(paper['title'])}</h1>"
-            f"<p>{_status_widget(paper)}</p>{ask_panel}<div class='reader-body'>{body_html}</div></div></main>"
+            f"<p>{_status_widget(paper)}</p>{_pdf_panel(paper_id, paper)}{ask_panel}<div class='reader-body'>{body_html}</div></div></main>"
             "</body></html>"
         )
 
@@ -589,6 +606,7 @@ def create_app(config_path: str | None = None) -> FastAPI:
                 media_type="application/pdf",
                 filename=f"{paper_id}.pdf",
                 content_disposition_type="inline",
+                headers={"Cache-Control": "no-store"},
             )
         if paper.get("object_key"):
             try:
@@ -602,6 +620,7 @@ def create_app(config_path: str | None = None) -> FastAPI:
                         media_type="application/pdf",
                         filename=f"{paper_id}.pdf",
                         content_disposition_type="inline",
+                        headers={"Cache-Control": "no-store"},
                     )
             except Exception as exc:
                 raise HTTPException(500, f"failed to restore cold PDF: {exc}") from exc

@@ -165,6 +165,8 @@ def test_upload_and_reader_flow(client, tmp_path):
     assert "/static/style.css" in r.text
     assert f"PAPER_ID = \"{paper_id}\"" in r.text
     assert "标记已读" in r.text
+    assert "查看原 PDF" in r.text
+    assert "pdf-frame" in r.text
     # Opening the reader automatically marks the paper as reading.
     r = client.get(f"/api/papers/{paper_id}")
     assert r.json()["status"] == "reading"

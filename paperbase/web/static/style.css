@@ -79,6 +79,8 @@ td,th{border:1px solid var(--border);padding:.4rem .55rem;font-size:.85rem;text-
 .reader-body td,.reader-body th{border:1px solid var(--border);padding:.3rem}
 .reader-body img{max-width:100%}
 .reader-body blockquote{border-left:3px solid #c7d2fe;margin-left:0;padding-left:.8rem;color:var(--muted)}
+.pdf-frame{width:100%;height:78vh;border:1px solid var(--border);border-radius:10px;background:#fff;margin-top:.5rem}
+@media(max-width:640px){.pdf-frame{height:65vh}}
 .reader-raw{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:13px;line-height:1.5}
 .reader-raw span{display:block;min-height:1.2em}
 .reader-raw span:target{background:#fef08a}
@@ -97,5 +99,7 @@ pre.dark{background:var(--nav);color:#e2e8f0;padding:.75rem;border-radius:10px;o
   .topbar nav a,.topbar nav button{font-size:.74rem;padding:.3rem .1rem}
   h1{font-size:1.3rem}h2{font-size:1.1rem}
   .reader-body{font-size:.95rem;line-height:1.65}
-  .reader-raw{font-size:12px}
+  .pdf-frame{width:100%;height:78vh;border:1px solid var(--border);border-radius:10px;background:#fff;margin-top:.5rem}
+@media(max-width:640px){.pdf-frame{height:65vh}}
+.reader-raw{font-size:12px}
 }
