@@ -7,7 +7,7 @@ from pathlib import Path
 
 from paperbase.config import load_config
 from paperbase.dci.agent import DCIQAAgent
-from paperbase.db import init_db, utcnow
+from paperbase.db import get_paper, init_db, utcnow
 from paperbase.paths import PaperPaths
 from paperbase.pipeline.digest import build_daily_digest, queue_papers
 from paperbase.pipeline.filter import apply_rules
@@ -154,6 +154,18 @@ def build_parser() -> argparse.ArgumentParser:
     p_web.add_argument("--host", default=None)
     p_web.add_argument("--port", type=int, default=None)
     p_web.set_defaults(func=cmd_web)
+
+    p_read = sub.add_parser("read", help="show paper metadata and first lines of markdown")
+    p_read.add_argument("paper_id")
+    p_read.add_argument("--lines", type=int, default=80)
+    p_read.add_argument("--lang", choices=["en", "zh"], default="en")
+    p_read.set_defaults(func=cmd_read)
+
+    p_stats = sub.add_parser("stats", help="library statistics")
+    p_stats.set_defaults(func=cmd_stats)
+
+    p_doctor = sub.add_parser("doctor", help="environment and data checks")
+    p_doctor.set_defaults(func=cmd_doctor)
     return parser
 
 
@@ -219,6 +231,82 @@ def cmd_web(args) -> int:
         port=int(args.port or access.get("bind_port", 8000)),
         workers=1,
     )
+    return 0
+
+
+def cmd_read(args) -> int:
+    _, paths, conn = _open_db(args)
+    paper = get_paper(conn, args.paper_id)
+    if not paper:
+        print(f"paper not found: {args.paper_id}")
+        return 1
+    print(f"ID:       {paper['id']}")
+    print(f"标题:     {paper['title']}")
+    if paper["title_zh"]:
+        print(f"中文标题: {paper['title_zh']}")
+    print(f"年份/来源: {paper['year']} / {paper['venue']} ({paper['source']})")
+    print(f"状态:     {paper['status']}  pdf={paper['pdf_status']}  parse={paper['parse_status']}  translate={paper['translate_status']}")
+    if paper["local_pdf"]:
+        print(f"PDF:      {paper['local_pdf']}")
+    path_key = "md_zh_path" if args.lang == "zh" else "md_path"
+    md_path = paper.get(path_key) or paper.get("md_path")
+    if md_path and Path(md_path).exists():
+        print(f"Markdown: {md_path}")
+        lines = Path(md_path).read_text(encoding="utf-8", errors="replace").splitlines()
+        print("--- first lines ---")
+        for line in lines[: max(1, args.lines)]:
+            print(line)
+    else:
+        print("Markdown: 尚未解析或指定语言版本不存在")
+    return 0
+
+
+def cmd_stats(args) -> int:
+    _, _, conn = _open_db(args)
+    total = conn.execute("SELECT COUNT(*) FROM papers").fetchone()[0]
+    print(f"papers: {total}")
+    for label, sql in [
+        ("source", "SELECT source k, COUNT(*) n FROM papers GROUP BY source ORDER BY n DESC"),
+        ("status", "SELECT status k, COUNT(*) n FROM papers GROUP BY status ORDER BY n DESC"),
+        ("pdf_status", "SELECT pdf_status k, COUNT(*) n FROM papers GROUP BY pdf_status ORDER BY n DESC"),
+        ("parse_status", "SELECT parse_status k, COUNT(*) n FROM papers GROUP BY parse_status ORDER BY n DESC"),
+        ("translate_status", "SELECT translate_status k, COUNT(*) n FROM papers GROUP BY translate_status ORDER BY n DESC"),
+    ]:
+        print(label + ":", ", ".join(f"{r['k']}={r['n']}" for r in conn.execute(sql).fetchall()))
+    queued = conn.execute("SELECT COUNT(*) FROM tasks WHERE status='queued'").fetchone()[0]
+    print(f"queued_tasks: {queued}")
+    return 0
+
+
+def cmd_doctor(args) -> int:
+    import os
+    import shutil
+
+    config, paths, conn = _open_db(args)
+    problems = []
+    try:
+        conn.execute("SELECT 1").fetchone()
+        print(f"[ok] sqlite: {paths.db_path}")
+    except Exception as exc:
+        problems.append(f"sqlite: {exc}")
+    if shutil.which("rg"):
+        print("[ok] ripgrep installed")
+    else:
+        problems.append("ripgrep (rg) is not installed")
+    usage = shutil.disk_usage(paths.root)
+    ratio = usage.used / usage.total
+    print(f"[info] disk usage {ratio:.1%}, free {usage.free/1024**3:.1f}GB")
+    if ratio >= float(config.get("storage", {}).get("disk_block_ratio", 0.90)):
+        problems.append(f"disk usage {ratio:.1%} above block threshold")
+    for env in [config.get("llm", {}).get("api_key_env", "OPENAI_API_KEY"),
+                config.get("mineru", {}).get("api_key_env", "MINERU_API_KEY")]:
+        print(f"[{'ok' if os.environ.get(env) else 'warn'}] {env} is {'set' if os.environ.get(env) else 'NOT set'}")
+    if problems:
+        print("problems:")
+        for p in problems:
+            print(" -", p)
+        return 1
+    print("[ok] doctor checks passed")
     return 0
 
 

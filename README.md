@@ -39,6 +39,11 @@ paper worker --once
 # 6. 问 AI
 paper ask "这篇论文的方法是什么？" --paper <paper_id>
 paper ask "2026 findings 里 GraphRAG 论文有哪些共同趋势？"
+
+# 其他常用命令
+paper read <paper_id>        # 查看论文元数据与 Markdown
+paper stats                 # 库统计
+paper doctor                # 环境/数据检查
 ```
 
 ## 配置
