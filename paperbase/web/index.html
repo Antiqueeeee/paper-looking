@@ -43,9 +43,10 @@
         </div>
       </details>
       <button id="batchModeBtn" class="ghost" onclick="toggleBatchMode()">批量选择</button>
-      <div id="batchBar" style="display:none;margin:.5rem 0">
-        <button class="btn" onclick="batchIgnore()">不感兴趣（<span id="batchCount">0</span>）</button>
+      <div id="batchBar" style="margin:.5rem 0;display:none">
+        <button class="ghost" onclick="selectAllPapers()">全选</button>
         <button class="ghost" onclick="clearBatch()">取消选择</button>
+        <button class="btn" id="batchIgnoreBtn" onclick="batchIgnore()" disabled>不感兴趣（<span id="batchCount">0</span>）</button>
       </div>
       <p class="hint" id="searchMeta"></p>
       <div id="paperList"></div>
@@ -148,13 +149,18 @@ async function searchPapers(){
 function toggleBatchMode(){
   const on=document.getElementById('papers').classList.toggle('batch-mode');
   $('batchModeBtn').textContent=on?'退出批量选择':'批量选择';
+  $('batchBar').style.display=on?'flex':'none';
   if(!on)clearBatch();
 }
 function selectedIds(){return [...document.querySelectorAll('#paperList input[type=checkbox]:checked')].map(c=>c.value)}
+function selectAllPapers(){
+  document.querySelectorAll('#paperList input[type=checkbox]').forEach(c=>c.checked=true);
+  updateBatch();
+}
 function updateBatch(){
   const n=selectedIds().length;
-  $('batchBar').classList.toggle('active', n>0);
   $('batchCount').textContent=n;
+  $('batchIgnoreBtn').disabled=n===0;
 }
 function clearBatch(){
   document.querySelectorAll('#paperList input[type=checkbox]').forEach(c=>c.checked=false);

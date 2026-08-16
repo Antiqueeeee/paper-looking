@@ -110,10 +110,9 @@ td,th{border:1px solid var(--border);padding:.4rem .55rem;font-size:.85rem;text-
 .reader-raw span{display:block;min-height:1.2em}
 .reader-raw span:target{background:#fef08a}
 
-/* floating batch actions */
-#batchBar{position:fixed;left:50%;bottom:calc(1rem + env(safe-area-inset-bottom));transform:translateX(-50%);z-index:60;display:none;gap:.5rem;background:var(--nav);padding:.55rem .8rem;border-radius:99px;box-shadow:0 8px 24px rgba(15,23,42,.25)}
-#batchBar.active{display:flex}
-#batchBar .btn,#batchBar .ghost{white-space:nowrap}
+/* batch toolbar */
+#batchBar{gap:.5rem;flex-wrap:wrap}
+#batchBar .btn,#batchBar .ghost{flex:1;min-width:100px}
 /* misc */
 #toast{position:fixed;bottom:calc(1rem + env(safe-area-inset-bottom));left:50%;transform:translateX(-50%);background:var(--nav);color:#fff;padding:.6rem 1rem;border-radius:99px;display:none;max-width:88vw;font-size:.9rem;z-index:50}
 pre.light{background:#f8fafc;color:var(--text);border:1px solid var(--border);white-space:pre-wrap;padding:.75rem;border-radius:10px;overflow:auto;max-width:100%;font-size:.88rem}
