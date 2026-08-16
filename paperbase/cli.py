@@ -6,6 +6,7 @@ import sys
 from pathlib import Path
 
 from paperbase.config import load_config
+from paperbase.dci.agent import DCIQAAgent
 from paperbase.db import init_db, utcnow
 from paperbase.paths import PaperPaths
 from paperbase.pipeline.digest import build_daily_digest, queue_papers
@@ -128,6 +129,12 @@ def build_parser() -> argparse.ArgumentParser:
     p_worker.add_argument("--max", type=int, default=1, dest="max_tasks")
     p_worker.add_argument("--task-type", choices=["download_pdf", "parse_pdf", "translate_full"])
     p_worker.set_defaults(func=cmd_worker)
+
+    p_ask = sub.add_parser("ask", help="ask the DCI agent")
+    p_ask.add_argument("question")
+    p_ask.add_argument("--paper", help="single paper id")
+    p_ask.add_argument("--papers", nargs="+", help="compare multiple paper ids")
+    p_ask.set_defaults(func=cmd_ask)
     return parser
 
 
@@ -159,6 +166,24 @@ def cmd_worker(args) -> int:
         done += 1
     print(f"processed {done} task(s)")
     return 0
+
+
+def cmd_ask(args) -> int:
+    config, paths, conn = _open_db(args)
+    if args.paper:
+        mode, ids = "paper", [args.paper]
+    elif args.papers:
+        mode, ids = "compare", args.papers
+    else:
+        mode, ids = "library", []
+    answer = DCIQAAgent(conn, config, paths).ask(args.question, mode=mode, paper_ids=ids)
+    print(answer.answer)
+    if answer.citations:
+        print("\n引用：")
+        for c in answer.citations:
+            print("  " + c)
+    print(f"\nconfidence={answer.confidence} tool_calls={answer.tool_calls} tokens={answer.prompt_tokens + answer.completion_tokens}")
+    return 0 if answer.answer else 1
 
 
 def main(argv: list[str] | None = None) -> int:
