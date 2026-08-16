@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import html as html_mod
+import json
 import os
 import shutil
 import tempfile
@@ -223,6 +224,16 @@ def create_app(config_path: str | None = None) -> FastAPI:
             shutil.rmtree(tmp.parent, ignore_errors=True)
         return paper
 
+    @app.get("/api/tags")
+    def tags(res=Depends(resources)):
+        _, _, conn = res
+        values: list[str] = []
+        for row in conn.execute("SELECT tags, user_tags FROM papers").fetchall():
+            for t in loads_list(row["tags"]) + loads_list(row["user_tags"]):
+                if t and t not in values:
+                    values.append(t)
+        return sorted(values)
+
     @app.get("/api/stats")
     def stats(res=Depends(resources)):
         _, _, conn = res
@@ -285,14 +296,69 @@ def create_app(config_path: str | None = None) -> FastAPI:
                 f"<h1>{html_mod.escape(paper['title'])}</h1><pre>{body}</pre></body></html>"
             )
         body_html = md.markdown(text, extensions=["tables", "fenced_code"])
+        paper_id_json = json.dumps(paper["id"], ensure_ascii=False)
+        ask_panel = f"""
+        <details id="ask" class="ask-panel">
+          <summary>🤖 问这篇论文</summary>
+          <textarea id="question" rows="3" placeholder="例如：这篇论文的核心方法是什么？实验用了哪些数据集？"></textarea>
+          <button class="ask-btn" onclick="askThisPaper()">提问</button>
+          <pre id="answer" class="light" style="display:none"></pre>
+          <div id="citations" class="cites"></div>
+        </details>
+        <script>
+        const PAPER_ID = {paper_id_json};
+        function citeLinks(list) {{
+          return (list || []).map(c => {{
+            const m = c.match(/^\\[([^:\\]]+):([0-9]+(?:-[0-9]+)?)\\]$/);
+            if (!m) return '<span>' + c + '</span>';
+            const p = m[1];
+            const zh = p.endsWith('.zh.md');
+            const id = p.replace(/\\.(zh\\.)?md$/, '');
+            const base = id.split('/').pop() || PAPER_ID;
+            const line = m[2].split('-')[0];
+            return `<a href="/reader/${{encodeURIComponent(base)}}?raw=1&lang=${{zh?'zh':'en'}}#L${{line}}" target="_blank">${{c}}</a>`;
+          }}).join(' ') || '<span class="muted">无结构化引用</span>';
+        }}
+        async function askThisPaper() {{
+          const q = document.getElementById('question').value.trim();
+          if (!q) {{ alert('请输入问题'); return; }}
+          const box = document.getElementById('answer');
+          box.style.display = 'block';
+          box.textContent = '检索中…';
+          document.getElementById('citations').innerHTML = '';
+          try {{
+            const r = await fetch('/api/ask', {{
+              method: 'POST',
+              headers: {{'Content-Type': 'application/json'}},
+              body: JSON.stringify({{question: q, mode: 'paper', paper_ids: [PAPER_ID]}})
+            }});
+            if (!r.ok) throw new Error(await r.text());
+            const d = await r.json();
+            box.textContent = d.answer + `\n\nConfidence: ${{d.confidence}} · 工具调用: ${{d.tool_calls}} · tokens: ${{(d.prompt_tokens||0)+(d.completion_tokens||0)}}`;
+            document.getElementById('citations').innerHTML = citeLinks(d.citations);
+          }} catch (e) {{
+            box.textContent = '提问失败：' + e.message;
+          }}
+        }}
+        if (new URLSearchParams(location.search).get('ask') === '1' || location.hash === '#ask') {{
+          const panel = document.getElementById('ask');
+          if (panel) {{ panel.open = true; panel.scrollIntoView({{behavior:'smooth'}}); }}
+        }}
+        </script>"""
         return (
             f"<html><head><meta charset='utf-8'><meta name='viewport' content='width=device-width, initial-scale=1, viewport-fit=cover'>"
             f"<title>{html_mod.escape(paper['title'])}</title><style>body{{font-family:serif;max-width:960px;margin:auto;padding:1rem;line-height:1.7}}"
             f"pre{{white-space:pre-wrap;overflow-x:auto}}table{{border-collapse:collapse;display:block;overflow-x:auto}}td,th{{border:1px solid #ccc;padding:.3rem}}"
             f"img{{max-width:100%}}"
-            f"@media(max-width:640px){{body{{padding:.5rem;font-size:15px}}h1{{font-size:1.3rem}}td,th{{padding:.25rem;font-size:.8rem}}}}"
+            f".ask-panel{{border:1px solid #c7d2fe;border-radius:12px;padding:.6rem .8rem;background:#f8faff;margin:0 0 1rem}}"
+            f".ask-panel summary{{font-weight:700;font-size:1rem;cursor:pointer;min-height:44px;display:flex;align-items:center}}"
+            f".ask-panel textarea{{width:100%;font-size:16px;padding:.6rem;border:1px solid #cbd5e1;border-radius:8px;margin:.5rem 0}}"
+            f".ask-panel .ask-btn{{background:#2563eb;color:#fff;border:0;padding:.6rem 1rem;border-radius:8px;font-size:16px;min-height:44px}}"
+            f".ask-panel pre.light{{background:#f8fafc;border:1px solid #e2e8f0;white-space:pre-wrap;padding:.6rem;border-radius:8px;font-size:.85rem}}"
+            f".cites a{{display:inline-block;color:#2563eb;text-decoration:none;margin:.15rem .4rem .15rem 0;font-size:.85rem}}"
+            f"@media(max-width:640px){{body{{padding:.5rem;font-size:15px}}h1{{font-size:1.3rem}}td,th{{padding:.25rem;font-size:.8rem}}.ask-panel{{padding:.5rem}}}}"
             f"</style></head><body><p><a href='/'>← 返回</a> | <a href='?lang=zh'>中文</a> | <a href='?lang=en'>English</a> | <a href='?raw=1'>原文行号</a></p>"
-            f"<h1>{html_mod.escape(paper['title'])}</h1>{body_html}</body></html>"
+            f"<h1>{html_mod.escape(paper['title'])}</h1>{ask_panel}{body_html}</body></html>"
         )
 
     return app

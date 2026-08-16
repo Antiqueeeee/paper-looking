@@ -13,7 +13,7 @@ html{font-size:16px}
 body{margin:0;font-family:system-ui,-apple-system,"Segoe UI",Roboto,"PingFang SC","Microsoft YaHei",sans-serif;background:var(--bg);color:var(--text);line-height:1.55;padding-bottom:env(safe-area-inset-bottom)}
 header{position:sticky;top:0;z-index:10;background:#0f172a;color:#fff;padding:.55rem .75rem;padding-top:calc(.55rem + env(safe-area-inset-top))}
 header h1{font-size:1rem;margin:0 0 .45rem;font-weight:700}
-nav{display:grid;grid-template-columns:repeat(5,1fr);gap:.35rem}
+nav{display:grid;grid-template-columns:repeat(4,1fr);gap:.35rem}
 nav button{background:#1e293b;color:#cbd5e1;border:1px solid #334155;padding:.55rem .1rem;border-radius:10px;cursor:pointer;font-size:.82rem;min-height:44px;white-space:nowrap}
 nav button.active,nav button:hover{background:var(--primary);color:#fff;border-color:var(--primary)}
 main{max-width:1100px;margin:0 auto;padding:.75rem}
@@ -61,7 +61,6 @@ table{border-collapse:collapse;width:100%;min-width:480px}td,th{border:1px solid
     <button class="active" onclick="show('digest')">今日早报</button>
     <button onclick="show('papers')">论文库</button>
     <button onclick="show('upload')">上传</button>
-    <button onclick="show('ask')">问 AI</button>
     <button onclick="show('stats')">统计</button>
   </nav>
 </header>
@@ -78,7 +77,7 @@ table{border-collapse:collapse;width:100%;min-width:480px}td,th{border:1px solid
     <div class="card">
       <div class="row">
         <input id="q" placeholder="标题 / 摘要关键词">
-        <input id="tag" placeholder="标签：kg / rag / kbqa">
+        <select id="tag"><option value="">全部标签</option></select>
         <input id="year" placeholder="年份：2026" type="number">
         <select id="status"><option value="">全部状态</option><option value="new">new</option><option value="in_queue">in_queue</option><option value="reading">reading</option><option value="done">done</option><option value="later">later</option></select>
       </div>
@@ -99,18 +98,6 @@ table{border-collapse:collapse;width:100%;min-width:480px}td,th{border:1px solid
     </div>
   </section>
 
-  <section id="ask" class="view">
-    <div class="card">
-      <h2>问 AI</h2>
-      <input id="askPaperId" placeholder="单篇论文 ID（留空 = 全库深度问答）">
-      <textarea id="question" rows="4" placeholder="例如：这篇论文的核心方法是什么？实验用了哪些数据集？"></textarea><br>
-      <button class="btn" onclick="askAi()">提问</button>
-      <p class="hint">回答基于你库中的论文原文，使用 rg 检索，引用可点击定位。</p>
-      <pre id="answer" class="light" style="display:none"></pre>
-      <div id="citations" class="cite"></div>
-    </div>
-  </section>
-
   <section id="stats" class="view">
     <div class="card"><h2>库统计</h2><div id="statsBox" class="muted">加载中…</div></div>
   </section>
@@ -121,10 +108,10 @@ const $=id=>document.getElementById(id);
 function show(name){
   document.querySelectorAll('.view').forEach(v=>v.classList.remove('active'));
   document.querySelectorAll('nav button').forEach((b,i)=>b.classList.toggle('active', b.textContent.trim()===({
-    digest:'今日早报',papers:'论文库',upload:'上传',ask:'问 AI',stats:'统计'}[name])));
+    digest:'今日早报',papers:'论文库',upload:'上传',stats:'统计'}[name])));
   $(name).classList.add('active');
   if(name==='digest')loadDigest();
-  if(name==='papers')searchPapers();
+  if(name==='papers'){loadTags();searchPapers();}
   if(name==='stats')loadStats();
 }
 function toast(m){const t=$('toast');t.textContent=m;t.style.display='block';setTimeout(()=>t.style.display='none',2600)}
@@ -134,6 +121,14 @@ function esc(s){return (s||'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>
 async function loadDigest(){
   try{const d=await j('/api/digest/today');$('digestText').textContent=d.content}
   catch(e){$('digestText').textContent='暂无早报。先在服务器运行：paper today'}
+}
+async function loadTags(){
+  try{
+    const tags=await j('/api/tags');
+    const sel=$('tag'); const cur=sel.value;
+    sel.innerHTML='<option value="">全部标签</option>'+tags.map(t=>`<option value="${esc(t)}">${esc(t)}</option>`).join('');
+    sel.value=cur;
+  }catch(e){}
 }
 async function searchPapers(){
   const p=new URLSearchParams({q:$('q').value.trim(),tag:$('tag').value.trim(),year:$('year').value.trim(),status:$('status').value,limit:'50'});
@@ -147,9 +142,9 @@ async function searchPapers(){
         <div class="meta">[${x.year||'?'}] ${esc(x.venue||'-')} · ${esc(x.source)} · pdf:${esc(x.pdf_status)} · parse:${esc(x.parse_status)} · translate:${esc(x.translate_status)}</div>
         <div class="badges">${(x.tags||[]).map(t=>`<span>${esc(t)}</span>`).join('')}<span class="st">${esc(x.status)}</span></div>
         <div class="actions">
-          <button class="btn" onclick="queueOne('${esc(x.id)}')">加入阅读队列</button>
-          <a href="/api/papers/${encodeURIComponent(x.id)}" target="_blank"><button class="ghost">JSON</button></a>
+          <a href="/reader/${encodeURIComponent(x.id)}?ask=1#ask"><button class="btn">阅读 &amp; 提问</button></a>
           <a href="/reader/${encodeURIComponent(x.id)}?lang=zh"><button class="ghost">中文阅读</button></a>
+          <button class="ghost" onclick="queueOne('${esc(x.id)}')">加入队列</button>
         </div>
       </div>`).join('') || '<p class="muted">没有结果</p>';
   }catch(e){toast('搜索失败：'+e.message)}
@@ -161,23 +156,6 @@ async function uploadPdf(){
   if($('uploadPaperId').value.trim())fd.append('paper_id',$('uploadPaperId').value.trim());
   if($('uploadTitle').value.trim())fd.append('title',$('uploadTitle').value.trim());
   try{const d=await j('/api/upload',{method:'POST',body:fd});$('uploadResult').style.display='block';$('uploadResult').textContent=JSON.stringify(d,null,2);toast('上传成功：'+d.id)}catch(e){toast('上传失败：'+e.message)}
-}
-async function askAi(){
-  const pid=$('askPaperId').value.trim();
-  const body={question:$('question').value.trim(),mode:pid?'paper':'library',paper_ids:pid?[pid]:[]};
-  if(!body.question){toast('请输入问题');return}
-  $('answer').style.display='block';$('answer').textContent='检索中…';$('citations').innerHTML='';
-  try{
-    const d=await j('/api/ask',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
-    $('answer').textContent=d.answer+`\n\nConfidence: ${d.confidence} · tool_calls: ${d.tool_calls} · tokens: ${(d.prompt_tokens||0)+(d.completion_tokens||0)}`;
-    const pidForCite = pid || (d.paper_ids&&d.paper_ids[0]) || '';
-    $('citations').innerHTML=(d.citations||[]).map(c=>{
-      const m=c.match(/^\[([^:\]]+):([0-9]+(?:-[0-9]+)?)\]$/);
-      if(!m)return `<span>${esc(c)}</span>`;
-      const id=(m[1].replace(/\.md$/, '').split('/').pop())||pidForCite;
-      return `<a href="/reader/${encodeURIComponent(id)}?raw=1#L${m[2].split('-')[0]}" target="_blank">${esc(c)}</a>`;
-    }).join(' ') || '<span class="muted">无结构化引用</span>';
-  }catch(e){$('answer').textContent='提问失败：'+e.message}
 }
 async function loadStats(){
   try{const d=await j('/api/stats');const rows=o=>Object.entries(o||{}).map(([k,v])=>`<tr><td>${esc(k)}</td><td>${v}</td></tr>`).join('');

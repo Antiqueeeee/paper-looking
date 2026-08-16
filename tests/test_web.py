@@ -36,8 +36,13 @@ def test_index_and_digest_pages(client):
     assert r.status_code == 200
     assert "今日早报" in r.text
     assert "论文库" in r.text
+    assert "全部标签" in r.text
+    assert "阅读 &amp; 提问" in r.text
     r = client.get("/digest")
     assert r.status_code in (200, 404)  # digest may or may not exist yet
+    r = client.get("/api/tags")
+    assert r.status_code == 200
+    assert "rag" in r.json()
 
 
 def test_health_and_stats(client):
@@ -101,3 +106,8 @@ def test_upload_and_reader_flow(client, tmp_path):
     r = client.get(f"/reader/{paper_id}?raw=1")
     assert r.status_code == 200
     assert 'id="L1"' in r.text
+
+    r = client.get(f"/reader/{paper_id}")
+    assert r.status_code == 200
+    assert "问这篇论文" in r.text
+    assert f"PAPER_ID = \"{paper_id}\"" in r.text
