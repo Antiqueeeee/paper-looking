@@ -25,6 +25,7 @@ class PaperStatus(str, Enum):
     READING = "reading"
     DONE = "done"
     LATER = "later"
+    IGNORED = "ignored"
 
 
 class PdfStatus(str, Enum):

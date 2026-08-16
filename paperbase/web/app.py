@@ -28,6 +28,7 @@ from paperbase.db import (
     set_note,
     set_user_tags,
     update_paper_status,
+    utcnow,
 )
 from paperbase.paths import PaperPaths, safe_component
 
@@ -149,6 +150,11 @@ class PatchPaper(BaseModel):
     status: str | None = None
     user_tags: list[str] | None = None
     note: str | None = None
+
+
+class BatchStatusBody(BaseModel):
+    ids: list[str]
+    status: str
 
 
 def create_app(config_path: str | None = None) -> FastAPI:
@@ -335,6 +341,9 @@ def create_app(config_path: str | None = None) -> FastAPI:
         if status:
             where.append("status=?")
             params.append(status)
+        else:
+            # Ignored papers are hidden by default; select the status to see them.
+            where.append("status != 'ignored'")
         if pdf_status:
             where.append("pdf_status=?")
             params.append(pdf_status)
@@ -347,6 +356,29 @@ def create_app(config_path: str | None = None) -> FastAPI:
             (*params, limit, offset),
         ).fetchall()
         return {"total": total, "limit": limit, "offset": offset, "items": [row_to_paper(r) for r in rows]}
+
+    @app.post("/api/papers/batch-status")
+    def batch_status(body: BatchStatusBody, res=Depends(resources)):
+        from paperbase.models import PaperStatus
+
+        _, _, conn = res
+        allowed = {e.value for e in PaperStatus}
+        if body.status not in allowed:
+            raise HTTPException(400, f"invalid status: {body.status}")
+        ids = [str(i) for i in body.ids if str(i).strip()]
+        if ids:
+            placeholders = ",".join("?" for _ in ids)
+            conn.execute(
+                f"UPDATE papers SET status=?, updated_at=? WHERE id IN ({placeholders})",
+                (body.status, utcnow(), *ids),
+            )
+            if body.status == "ignored":
+                conn.execute(
+                    f"UPDATE tasks SET status='cancelled' WHERE paper_id IN ({placeholders}) AND status='queued'",
+                    (*ids,),
+                )
+            conn.commit()
+        return {"updated": len(ids)}
 
     @app.get("/api/papers/{paper_id}")
     def paper_detail(paper_id: str, res=Depends(resources)):
@@ -499,6 +531,7 @@ def create_app(config_path: str | None = None) -> FastAPI:
             "reading": "在读",
             "done": "已读",
             "later": "稍后",
+            "ignored": "不感兴趣",
         }
         return {
             "tags": [

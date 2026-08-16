@@ -39,9 +39,13 @@
         <div class="row" style="margin-top:.5rem">
           <select id="year" onchange="searchPapers()"><option value="">全部年份</option></select>
           <select id="source" onchange="searchPapers()"><option value="">全部来源</option></select>
-          <select id="status" onchange="searchPapers()"><option value="">全部状态</option><option value="new">新收录</option><option value="in_queue">待读队列</option><option value="reading">在读</option><option value="done">已读</option><option value="later">稍后</option></select>
+          <select id="status" onchange="searchPapers()"><option value="">全部状态</option><option value="new">新收录</option><option value="in_queue">待读队列</option><option value="reading">在读</option><option value="done">已读</option><option value="later">稍后</option><option value="ignored">不感兴趣</option></select>
         </div>
       </details>
+      <div id="batchBar" style="display:none;margin:.5rem 0">
+        <button class="btn" onclick="batchIgnore()">不感兴趣（<span id="batchCount">0</span>）</button>
+        <button class="ghost" onclick="clearBatch()">取消选择</button>
+      </div>
       <p class="hint" id="searchMeta"></p>
       <div id="paperList"></div>
     </div>
@@ -96,7 +100,7 @@ async function loadDigest(){
   try{const d=await j('/api/digest/today');$('digestText').textContent=d.content}
   catch(e){$('digestText').textContent='暂无早报。先在服务器运行：paper today'}
 }
-let TAG_LABELS={},SOURCE_LABELS={},STATUS_LABELS={'new':'新收录','in_queue':'待读队列','reading':'在读','done':'已读','later':'稍后'};
+let TAG_LABELS={},SOURCE_LABELS={},STATUS_LABELS={'new':'新收录','in_queue':'待读队列','reading':'在读','done':'已读','later':'稍后','ignored':'不感兴趣'};
 function label(t,map){return map[t]||t}
 async function loadFacets(){
   try{
@@ -132,8 +136,10 @@ async function searchPapers(){
       const titleHtml = parsed
         ? `<a href="/reader/${encodeURIComponent(x.id)}">${esc(zh||x.title)}</a>`
         : `<span>${esc(zh||x.title)}</span>`;
+      actions+=`<button class="ghost" onclick="ignoreOne('${esc(x.id)}')">不感兴趣</button>`;
       return `
       <div class="paper">
+        <label class="paper-check"><input type="checkbox" value="${esc(x.id)}" onchange="updateBatch()">选择</label>
         <h3>${titleHtml}</h3>
         ${zh?`<div class="zh">${esc(x.title)}</div>`:''}
         <div class="meta">[${x.year||'?'}] ${esc(x.venue||'-')} · ${esc(label(x.source,SOURCE_LABELS))} · PDF:${esc(label(x.pdf_status,{'none':'无','needs_upload':'待上传','downloaded':'已下载','download_failed':'下载失败','cold':'冷存储'}))} · 解析:${esc(label(x.parse_status,{'none':'未解析','done':'已解析','failed':'失败'}))} · 翻译:${esc(label(x.translate_status,{'none':'未翻译','done':'已翻译','failed':'失败'}))}</div>
@@ -142,6 +148,24 @@ async function searchPapers(){
       </div>`}).join('') || '<p class="muted">没有结果</p>';
   }catch(e){toast('搜索失败：'+e.message)}
 }
+function selectedIds(){return [...document.querySelectorAll('#paperList input[type=checkbox]:checked')].map(c=>c.value)}
+function updateBatch(){
+  const n=selectedIds().length;
+  $('batchBar').style.display=n?'block':'none';
+  $('batchCount').textContent=n;
+}
+function clearBatch(){
+  document.querySelectorAll('#paperList input[type=checkbox]').forEach(c=>c.checked=false);
+  updateBatch();
+}
+async function setStatuses(ids,status){
+  try{
+    await j('/api/papers/batch-status',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({ids,status})});
+    clearBatch(); searchPapers();
+  }catch(e){toast(e.message)}
+}
+function batchIgnore(){setStatuses(selectedIds(),'ignored')}
+function ignoreOne(id){setStatuses([id],'ignored')}
 async function queueOne(id){
   try{
     const d=await j('/api/queue',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({ids:[id]})});

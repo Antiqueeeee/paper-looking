@@ -71,6 +71,33 @@ def test_health_and_stats(client):
     assert r.json()["by_tag"]["rag"] == 1
 
 
+def test_ignore_batch_and_default_hide(client):
+    from paperbase.config import load_config
+    from paperbase.paths import PaperPaths as PP
+    from paperbase.db import init_db as init_db2, upsert_paper as upsert_paper2
+    from paperbase.tasks import enqueue_task
+
+    cfg = load_config(client.cfg_path)
+    paths = PP(cfg["paths"]["data_dir"])
+    conn = init_db2(paths.db_path)
+    upsert_paper2(conn, {"id": "p-ignored", "source": "acl", "title": "Ignored Paper", "year": 2026, "venue": "x"})
+    conn.execute("UPDATE papers SET status='ignored' WHERE id='p-ignored'")
+    enqueue_task(conn, paper_id="p-ignored", task_type="download_pdf", payload={"url": "x"})
+    conn.commit(); conn.close()
+
+    r = client.get("/api/papers")
+    assert all(i["id"] != "p-ignored" for i in r.json()["items"])
+    r = client.get("/api/papers", params={"status": "ignored"})
+    assert [i["id"] for i in r.json()["items"]] == ["p-ignored"]
+
+    r = client.post("/api/papers/batch-status", json={"ids": ["2026.acl-long.1"], "status": "ignored"})
+    assert r.status_code == 200
+    assert client.get("/api/papers/2026.acl-long.1").json()["status"] == "ignored"
+
+    # Restore fixture paper for later tests.
+    client.patch("/api/papers/2026.acl-long.1", json={"status": "new"})
+
+
 def test_paper_search_and_detail(client):
     r = client.get("/api/papers", params={"q": "GraphRAG", "tag": "rag"})
     assert r.status_code == 200
