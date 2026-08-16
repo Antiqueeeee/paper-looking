@@ -583,13 +583,14 @@ def create_app(config_path: str | None = None) -> FastAPI:
         paper = get_paper(conn, paper_id)
         if not paper:
             raise HTTPException(404, "paper not found")
-        if paper.get("status") in ("new", "in_queue", "later"):
-            update_paper_status(conn, paper_id, "reading")
-            paper = get_paper(conn, paper_id)
 
         path_value = paper.get("md_zh_path") if lang == "zh" else paper.get("md_path")
         if not path_value or not Path(path_value).exists():
             raise HTTPException(404, "markdown not available")
+
+        if paper.get("status") in ("new", "in_queue", "later"):
+            update_paper_status(conn, paper_id, "reading")
+            paper = get_paper(conn, paper_id)
         import markdown as md
 
         text = Path(path_value).read_text(encoding="utf-8")

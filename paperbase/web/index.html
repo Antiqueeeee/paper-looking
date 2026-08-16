@@ -129,9 +129,12 @@ async function searchPapers(){
         actions=`<button class="btn" onclick="queueOne('${esc(x.id)}')">想读：自动解析+翻译</button>`;
         if(x.pdf_status==='needs_upload') actions+=`<button class="ghost" onclick="show('upload')">去上传 PDF</button>`;
       }
+      const titleHtml = parsed
+        ? `<a href="/reader/${encodeURIComponent(x.id)}">${esc(zh||x.title)}</a>`
+        : `<span>${esc(zh||x.title)}</span>`;
       return `
       <div class="paper">
-        <h3><a href="/reader/${encodeURIComponent(x.id)}">${esc(zh||x.title)}</a></h3>
+        <h3>${titleHtml}</h3>
         ${zh?`<div class="zh">${esc(x.title)}</div>`:''}
         <div class="meta">[${x.year||'?'}] ${esc(x.venue||'-')} · ${esc(label(x.source,SOURCE_LABELS))} · PDF:${esc(label(x.pdf_status,{'none':'无','needs_upload':'待上传','downloaded':'已下载','download_failed':'下载失败','cold':'冷存储'}))} · 解析:${esc(label(x.parse_status,{'none':'未解析','done':'已解析','failed':'失败'}))} · 翻译:${esc(label(x.translate_status,{'none':'未翻译','done':'已翻译','failed':'失败'}))}</div>
         <div class="badges">${(x.tags||[]).map(t=>`<span>${esc(label(t,TAG_LABELS))}</span>`).join('')}<span class="st">${esc(label(x.status,STATUS_LABELS))}</span></div>
