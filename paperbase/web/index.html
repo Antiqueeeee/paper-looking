@@ -31,7 +31,7 @@
   <section id="papers" class="view active">
     <div class="card">
       <div class="row">
-        <input id="q" placeholder="搜索标题或摘要" onkeydown="if(event.key==='Enter')searchPapers()">
+        <input id="q" placeholder="搜索标题或摘要" oninput="debouncedSearch()">
         <select id="tag" onchange="searchPapers()"><option value="">全部标签</option></select>
       </div>
       <button class="btn" onclick="searchPapers()">筛选</button>
@@ -90,6 +90,8 @@ function show(name){
   if(name==='queue')loadQueue();
 }
 function toast(m){const t=$('toast');t.textContent=m;t.style.display='block';setTimeout(()=>t.style.display='none',2600)}
+let searchTimer=null;
+function debouncedSearch(){clearTimeout(searchTimer);searchTimer=setTimeout(searchPapers,400)}
 async function j(url,opts={}){const r=await fetch(url,opts);if(!r.ok){const e=await r.text();throw new Error(e||r.status)}return r.json()}
 function esc(s){return (s||'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}
 
