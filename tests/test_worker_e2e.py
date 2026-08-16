@@ -1,7 +1,6 @@
 """Phase 7 tests: daily pipeline, task loop and end-to-end flow."""
 from __future__ import annotations
 
-import json
 import zipfile
 from pathlib import Path
 
@@ -9,7 +8,6 @@ import pytest
 
 from paperbase.db import init_db, set_local_file, set_meta, upsert_paper, get_paper
 from paperbase.llm import LLMResponse, LLMUsage, MockLLMClient
-from paperbase.models import PaperDraft
 from paperbase.paths import PaperPaths
 from paperbase.pipeline.digest import queue_papers
 from paperbase.pipeline.worker import check_disk_policy, run_daily_pipeline, run_task_loop
@@ -86,7 +84,6 @@ def test_end_to_end_queue_parse_translate_ask(conn, paths, tmp_path, monkeypatch
     from paperbase.pipeline.mineru import run_parse_task as real_parse
     from paperbase.pipeline.fulltext_translate import run_translate_full_task as real_translate
     from paperbase.dci.agent import DCIQAAgent
-    from paperbase.llm import ToolCall
 
     pdf = tmp_path / "p1.pdf"
     pdf.write_bytes(b"%PDF-1.4\n" + b"x" * 300)

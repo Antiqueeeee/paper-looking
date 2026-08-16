@@ -1,14 +1,10 @@
 """Phase 6 tests: FastAPI endpoints."""
 from __future__ import annotations
 
-import json
-from pathlib import Path
-
 import pytest
 from fastapi.testclient import TestClient
 
-from paperbase.config import load_config
-from paperbase.db import init_db, set_parse_status, upsert_paper
+from paperbase.db import init_db, upsert_paper
 from paperbase.paths import PaperPaths
 
 

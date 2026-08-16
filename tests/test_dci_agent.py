@@ -55,7 +55,7 @@ def _final_resp(text):
 
 
 def test_single_paper_qa_loop(conn, paths):
-    md = _write_paper_md(conn, paths, "p1", "Our GraphRAG method indexes entities.\nSecond line.\nThird line.\n")
+    _write_paper_md(conn, paths, "p1", "Our GraphRAG method indexes entities.\nSecond line.\nThird line.\n")
     client = ScriptedClient([
         _tool_resp("rg", {"pattern": "GraphRAG", "context_lines": 1}),
         _final_resp("Explanation: found method [p1.md:1]\nExact Answer: GraphRAG\nConfidence: 90%"),
