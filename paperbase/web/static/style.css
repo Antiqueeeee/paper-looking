@@ -72,6 +72,8 @@ td,th{border:1px solid var(--border);padding:.4rem .55rem;font-size:.85rem;text-
 .cites a{display:inline-block;color:var(--primary);text-decoration:none;margin:.15rem .4rem .15rem 0;font-size:.85rem}
 
 /* Q&A history */
+.qa-section{border:1px solid var(--border);border-radius:12px;padding:.6rem .8rem;margin:0 0 1rem;background:#fff}
+.qa-section summary{font-weight:700;font-size:1rem;cursor:pointer;min-height:44px;display:flex;align-items:center}
 .qa-history-title{margin:.9rem 0 .3rem}
 .qa-history .qa-item{border:1px solid var(--border);border-radius:10px;padding:.5rem .7rem;margin-bottom:.5rem;background:#fff}
 .qa-history .qa-item summary{cursor:pointer;font-size:.92rem;font-weight:600}

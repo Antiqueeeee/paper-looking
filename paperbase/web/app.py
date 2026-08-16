@@ -529,8 +529,6 @@ def create_app(config_path: str | None = None) -> FastAPI:
           <button class="btn" onclick="askThisPaper()">提问</button>
           <pre id="answer" class="light" style="display:none"></pre>
           <div id="citations" class="cites"></div>
-          <h4 class="qa-history-title">历史问答（所有人可见，可复用）</h4>
-          <div id="qaHistory" class="qa-history"></div>
         </details>
         <script>
         const PAPER_ID = {paper_id_json};
@@ -570,6 +568,11 @@ def create_app(config_path: str | None = None) -> FastAPI:
               box.appendChild(details);
             }});
             if (!d.items.length) box.innerHTML = '<p class="hint">还没有人问过这篇论文，问第一个问题吧。</p>';
+            const panel = document.getElementById('qaHistoryPanel');
+            if (panel) {{
+              const s = panel.querySelector('summary');
+              if (s) s.textContent = '💬 历史问答（' + (d.items || []).length + '）';
+            }}
           }} catch (e) {{}}
         }}
         async function askThisPaper() {{
@@ -614,7 +617,11 @@ def create_app(config_path: str | None = None) -> FastAPI:
             + (f"<a class='btn ghost' href='/reader/{paper_id}/pdf-preview' target='_blank'>原 PDF</a>" if _has_pdf(paper) else "")
             + "</div></header>"
             f"<main class='container'><div class='card'><h1>{html_mod.escape(paper['title'])}</h1>"
-            f"<p>{_status_widget(paper)}</p>{ask_panel}<div class='reader-body'>{body_html}</div></div></main>"
+            f"<p>{_status_widget(paper)}</p>{ask_panel}"
+            "<details id='qaHistoryPanel' class='qa-section' open>"
+            "<summary>💬 历史问答（所有人可见，可复用）</summary>"
+            "<div id='qaHistory' class='qa-history'></div></details>"
+            f"<div class='reader-body'>{body_html}</div></div></main>"
             "</body></html>"
         )
 
