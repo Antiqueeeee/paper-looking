@@ -587,7 +587,8 @@ def create_app(config_path: str | None = None) -> FastAPI:
               const details = document.createElement('details');
               details.className = 'qa-item';
               const summary = document.createElement('summary');
-              summary.textContent = 'Q' + (idx + 1) + ' · ' + item.question + ' · ' + Math.round((item.confidence || 0) * 100) + '%';
+              const when = (item.created_at || '').slice(0, 16).replace('T', ' ');
+              summary.textContent = 'Q' + (idx + 1) + ' · ' + item.question + ' · ' + Math.round((item.confidence || 0) * 100) + '%' + (when ? ' · ' + when : '');
               details.appendChild(summary);
               const pre = document.createElement('pre');
               pre.textContent = item.answer;
@@ -660,6 +661,7 @@ def create_app(config_path: str | None = None) -> FastAPI:
             f"<p>{_status_widget(paper)}</p>{ask_panel}"
             "<details id='qaHistoryPanel' class='qa-section' open>"
             "<summary>💬 历史问答（所有人可见，可复用）</summary>"
+            "<p class='hint'>当前为单用户版本，问答默认匿名共享；将来账号体系下可显示提问者，或选择“仅自己可见”。</p>"
             "<div id='qaHistory' class='qa-history'></div></details>"
             f"<div class='reader-body'>{body_html}</div></div></main>"
             "</body></html>"
