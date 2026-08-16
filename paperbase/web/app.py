@@ -94,7 +94,7 @@ def create_app(config_path: str | None = None) -> FastAPI:
 
     @app.get("/", response_class=HTMLResponse, include_in_schema=False)
     def index():
-        return _index_html()
+        return HTMLResponse(_index_html(), headers={"Cache-Control": "no-store, no-cache, must-revalidate"})
 
     @app.get("/digest", response_class=HTMLResponse, include_in_schema=False)
     def digest_page(res=Depends(resources)):
