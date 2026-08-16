@@ -1,0 +1,9 @@
+# Copy to /etc/litestream.yml after filling the S3-compatible replica.
+dbs:
+  - path: /opt/paper/data/papers.db
+    replicas:
+      - type: s3
+        bucket: ${PAPERBASE_BACKUP_BUCKET}
+        path: paperbase/papers.db
+        endpoint: ${PAPERBASE_BACKUP_ENDPOINT}
+        force-path-style: true

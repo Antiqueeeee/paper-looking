@@ -10,9 +10,7 @@ from paperbase.dci.agent import DCIQAAgent
 from paperbase.db import init_db, utcnow
 from paperbase.paths import PaperPaths
 from paperbase.pipeline.digest import build_daily_digest, queue_papers
-from paperbase.pipeline.handlers import process_task
 from paperbase.pipeline.pdf import ingest_uploaded_pdf
-from paperbase.tasks import claim_next_task
 from paperbase.sources import fetch_source
 from paperbase.sources.import_legacy import import_legacy
 
@@ -126,8 +124,9 @@ def build_parser() -> argparse.ArgumentParser:
 
     p_worker = sub.add_parser("worker", help="run queued pipeline tasks")
     p_worker.add_argument("--once", action="store_true", help="claim and run one task, then exit")
-    p_worker.add_argument("--max", type=int, default=1, dest="max_tasks")
-    p_worker.add_argument("--task-type", choices=["download_pdf", "parse_pdf", "translate_full"])
+    p_worker.add_argument("--loop", action="store_true", help="run scheduler + task loop forever")
+    p_worker.add_argument("--daily", action="store_true", help="run one daily pipeline now")
+    p_worker.add_argument("--task-type", choices=["download_pdf", "parse_pdf", "translate_full", "translate_meta"])
     p_worker.set_defaults(func=cmd_worker)
 
     p_ask = sub.add_parser("ask", help="ask the DCI agent")
@@ -158,17 +157,17 @@ def cmd_upload(args) -> int:
 
 def cmd_worker(args) -> int:
     config, paths, conn = _open_db(args)
-    done = 0
-    limit = max(1, int(args.max_tasks)) if not args.once else 1
-    while done < limit:
-        claimed = claim_next_task(conn, task_type=args.task_type, limit=1)
-        if not claimed:
-            print("no pending tasks")
-            break
-        task = claimed[0]
-        print(f"running task {task['id']} {task['task_type']} for {task['paper_id']}")
-        process_task(conn, config, paths, task)
-        done += 1
+    from paperbase.pipeline import worker as worker_mod
+
+    if args.daily:
+        report = worker_mod.run_daily_pipeline(conn, config, paths)
+        import json as _json
+        print(_json.dumps(report, ensure_ascii=False, default=str)[:6000])
+        return 0
+    if args.loop:
+        worker_mod.main_loop(config, paths)
+        return 0
+    done = worker_mod.run_task_loop(conn, config, paths, once=args.once, task_type=args.task_type)
     print(f"processed {done} task(s)")
     return 0
 

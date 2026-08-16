@@ -1,0 +1,19 @@
+[Unit]
+Description=PaperBase worker (fetch / parse / translate)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=paper
+Group=paper
+WorkingDirectory=/opt/paper
+Environment=PAPERBASE_CONFIG=/opt/paper/config.toml
+ExecStart=/opt/paper/venv/bin/python -m paperbase.cli worker --loop
+Restart=always
+RestartSec=5
+MemoryMax=1G
+NoNewPrivileges=true
+
+[Install]
+WantedBy=multi-user.target
