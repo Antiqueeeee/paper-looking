@@ -33,15 +33,10 @@
       <div class="row">
         <input id="q" placeholder="搜索标题或摘要" onkeydown="if(event.key==='Enter')searchPapers()" onchange="searchPapers()">
         <select id="tag" onchange="searchPapers()"><option value="">全部标签</option></select>
+        <select id="year" onchange="searchPapers()"><option value="">全部年份</option></select>
+        <select id="source" onchange="searchPapers()"><option value="">全部来源</option></select>
+        <select id="status" onchange="searchPapers()"><option value="">全部状态</option><option value="new">新收录</option><option value="in_queue">待读队列</option><option value="reading">在读</option><option value="done">已读</option><option value="later">稍后</option><option value="ignored">不感兴趣</option></select>
       </div>
-      <details class="hint">
-        <summary>更多筛选</summary>
-        <div class="row" style="margin-top:.5rem">
-          <select id="year" onchange="searchPapers()"><option value="">全部年份</option></select>
-          <select id="source" onchange="searchPapers()"><option value="">全部来源</option></select>
-          <select id="status" onchange="searchPapers()"><option value="">全部状态</option><option value="new">新收录</option><option value="in_queue">待读队列</option><option value="reading">在读</option><option value="done">已读</option><option value="later">稍后</option><option value="ignored">不感兴趣</option></select>
-        </div>
-      </details>
       <button id="batchModeBtn" class="ghost" onclick="toggleBatchMode()">批量选择</button>
       <div id="batchBar" style="margin:.5rem 0;display:none">
         <button class="ghost" onclick="selectAllPapers()">全选</button>
