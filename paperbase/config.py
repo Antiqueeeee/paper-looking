@@ -11,6 +11,60 @@ from copy import deepcopy
 from pathlib import Path
 from typing import Any
 
+
+def load_env_file(path: str | Path = ".env", *, override: bool = False) -> bool:
+    """Load a simple KEY=VALUE .env file into os.environ.
+
+    Existing environment variables win by default. The built-in parser handles
+    unquoted/single-quoted/double-quoted values, comments and blank lines; when
+    python-dotenv is installed it is used for stricter dotenv syntax.
+    """
+    env_path = Path(path).expanduser()
+    if not env_path.exists():
+        return False
+
+    try:
+        from dotenv import load_dotenv  # type: ignore
+
+        load_dotenv(env_path, override=override)
+        return True
+    except ImportError:
+        pass
+
+    loaded = False
+    try:
+        with open(env_path, encoding="utf-8") as f:
+            for raw in f:
+                line = raw.strip()
+                if not line or line.startswith("#") or "=" not in line:
+                    continue
+                key, _, value = line.partition("=")
+                key = key.strip()
+                value = value.strip()
+                if value.startswith('"') and value.endswith('"') and len(value) >= 2:
+                    value = value[1:-1]
+                elif value.startswith("'") and value.endswith("'") and len(value) >= 2:
+                    value = value[1:-1]
+                if not key:
+                    continue
+                if override or key not in os.environ:
+                    os.environ[key] = value
+                    loaded = True
+    except OSError:
+        return False
+    return loaded
+
+
+def _load_default_env_files(config_path: str | Path | None = None) -> None:
+    """Load ./.env and, when config file is given, <config_dir>/.env."""
+    env_override = os.environ.get("PAPERBASE_ENV_FILE")
+    if env_override:
+        load_env_file(env_override)
+        return
+    load_env_file(Path.cwd() / ".env")
+    if config_path:
+        load_env_file(Path(config_path).expanduser().parent / ".env")
+
 DEFAULTS: dict[str, Any] = {
     "paths": {
         "data_dir": "./data",
@@ -107,6 +161,7 @@ def load_config(path: str | Path | None = None) -> dict:
     Missing keys fall back to defaults, so partial configs are valid.
     """
     config = deepcopy(DEFAULTS)
+    _load_default_env_files(path)
     if path is None:
         env_path = os.environ.get("PAPERBASE_CONFIG")
         if not env_path:
@@ -124,4 +179,4 @@ def data_dir(config: dict) -> Path:
     return Path(config["paths"]["data_dir"]).expanduser().resolve()
 
 
-__all__ = ["DEFAULTS", "load_config", "deep_merge", "data_dir"]
+__all__ = ["DEFAULTS", "load_config", "deep_merge", "data_dir", "load_env_file"]

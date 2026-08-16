@@ -18,24 +18,26 @@ python3 -m venv venv
 cp config.example.toml config.toml     # 填写 LLM / MinerU / 对象存储
 ```
 
-设置密钥（写入 `/etc/paper.env`，由 systemd 加载）：
+设置密钥（推荐直接放在 `/opt/paper/.env`，应用启动时自动加载）：
 
 ```bash
-sudo tee /etc/paper.env >/dev/null <<'ENV'
-OPENAI_API_KEY=...
+sudo -u paper tee /opt/paper/.env >/dev/null <<'ENV'
+DEEPSEEK_API_KEY=...
 MINERU_API_KEY=...
-S3_ACCESS_KEY=...
-S3_SECRET_KEY=...
 PAPERBASE_CONFIG=/opt/paper/config.toml
 ENV
+sudo chmod 600 /opt/paper/.env
 ```
+
+也可以使用 systemd 的 `EnvironmentFile=/etc/paper.env`，两种方式二选一。
 
 ## 3. systemd 服务
 
 ```bash
 sudo cp ops/paper-web.service ops/paper-worker.service /etc/systemd/system/
-# 在 [Service] 段加入：
+# 若使用 /etc/paper.env 方式，在 [Service] 段加入：
 # EnvironmentFile=/etc/paper.env
+# 若使用 /opt/paper/.env，则无需修改 service 文件。
 sudo systemctl daemon-reload
 sudo systemctl enable --now paper-web paper-worker
 ```

@@ -50,8 +50,9 @@ paper doctor                # 环境/数据检查
 
 复制 `config.example.toml` 为 `config.toml`，或设置 `PAPERBASE_CONFIG` 环境变量。
 
-- LLM 默认 DeepSeek：`export DEEPSEEK_API_KEY=...`；切换 provider 只改 `[llm] provider`
-- MinerU：`export MINERU_API_KEY=...`（只从环境变量读取）
+- 推荐把密钥放在项目根目录 `.env` 文件（见 `.env.example`），启动时自动加载；也可以继续用环境变量
+- LLM 默认 DeepSeek：`.env` 中填 `DEEPSEEK_API_KEY`；切换 provider 只改 `[llm] provider`
+- MinerU：`.env` 中填 `MINERU_API_KEY`（只从环境变量/`.env` 读取）
 - 对象存储：默认本地 `filesystem`，后续可切 `oss` / `s3`
 - 每日预算、磁盘阈值均在配置中
 

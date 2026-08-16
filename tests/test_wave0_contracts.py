@@ -185,3 +185,24 @@ def test_mock_llm_contract():
     resp = mock.chat([LLMMessage(role="user", content="hi")])
     assert resp.content == ""
     assert mock.calls
+
+
+def test_load_env_file_parses_and_does_not_override(tmp_path, monkeypatch):
+    from paperbase.config import load_env_file
+
+    env_file = tmp_path / ".env"
+    env_file.write_text(
+        '# comment\nDEEPSEEK_API_KEY=sk-test\nMINERU_API_KEY="mineru-test"\nEMPTY=\n',
+        encoding="utf-8",
+    )
+    monkeypatch.delenv("DEEPSEEK_API_KEY", raising=False)
+    monkeypatch.delenv("MINERU_API_KEY", raising=False)
+    assert load_env_file(env_file) is True
+    import os
+    assert os.environ["DEEPSEEK_API_KEY"] == "sk-test"
+    assert os.environ["MINERU_API_KEY"] == "mineru-test"
+    assert os.environ["EMPTY"] == ""
+
+    monkeypatch.setenv("DEEPSEEK_API_KEY", "already-set")
+    load_env_file(env_file)
+    assert os.environ["DEEPSEEK_API_KEY"] == "already-set"

@@ -9,3 +9,7 @@ outputs/
 /ACL-Anthology-Crawler/
 /papers/
 *.egg-info/
+
+.env
+.env.local
+!.env.example
