@@ -73,23 +73,6 @@ def _has_pdf(paper: dict) -> bool:
     return bool(local and Path(local).exists()) or bool(paper.get("object_key"))
 
 
-def _pdf_panel(paper_id: str, paper: dict) -> str:
-    if not _has_pdf(paper):
-        return ""
-    return f"""
-    <details id="pdf-panel" class="ask-panel">
-      <summary>📄 查看原 PDF</summary>
-      <p class="hint">原 PDF 已转换为图片在线预览，不会触发下载。</p>
-      <a class="btn" href="/reader/{paper_id}/pdf-preview" target="_blank">打开原 PDF 预览</a>
-    </details>
-    <script>
-    if (new URLSearchParams(location.search).get('pdf') === '1') {{
-      const p = document.getElementById('pdf-panel');
-      if (p) {{ p.open = true; p.scrollIntoView({{behavior:'smooth'}}); }}
-    }}
-    </script>"""
-
-
 def _status_widget(paper: dict) -> str:
     """Read-status controls embedded in the reader page."""
     pid = json.dumps(paper["id"], ensure_ascii=False)
@@ -507,7 +490,7 @@ def create_app(config_path: str | None = None) -> FastAPI:
                 + (f"<a class='btn ghost' href='/reader/{paper_id}/pdf-preview' target='_blank'>原 PDF</a>" if _has_pdf(paper) else "")
                 + "</div></header>"
                 f"<main class='container'><div class='card'><h1>{html_mod.escape(paper['title'])}</h1>"
-                f"<p>{_status_widget(paper)}</p>{_pdf_panel(paper_id, paper)}<pre class='reader-raw'>{body}</pre></div></main></body></html>"
+                f"<p>{_status_widget(paper)}</p><pre class='reader-raw'>{body}</pre></div></main></body></html>"
             )
         body_html = md.markdown(text, extensions=["tables", "fenced_code"])
         paper_id_json = json.dumps(paper["id"], ensure_ascii=False)
@@ -571,7 +554,7 @@ def create_app(config_path: str | None = None) -> FastAPI:
             + (f"<a class='btn ghost' href='/reader/{paper_id}/pdf-preview' target='_blank'>原 PDF</a>" if _has_pdf(paper) else "")
             + "</div></header>"
             f"<main class='container'><div class='card'><h1>{html_mod.escape(paper['title'])}</h1>"
-            f"<p>{_status_widget(paper)}</p>{_pdf_panel(paper_id, paper)}{ask_panel}<div class='reader-body'>{body_html}</div></div></main>"
+            f"<p>{_status_widget(paper)}</p>{ask_panel}<div class='reader-body'>{body_html}</div></div></main>"
             "</body></html>"
         )
 
