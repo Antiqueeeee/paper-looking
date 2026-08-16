@@ -13,7 +13,7 @@
 | 阅读状态 status | 用户私有 | new / in_queue / reading / done / later |
 | 笔记 note | 用户私有 | |
 | 用户标签 user_tags | 用户私有 | 系统标签 tags 仍是全局 |
-| 问答历史 qa_logs | 用户私有 | 问题和答案可能包含个人兴趣 |
+| 问答历史 qa_logs | 默认共享 | 默认 public，对一篇论文的公共提问/回答全员可见；可加 private 选项 |
 | 阅读时长/进度 | 用户私有 | 打开时间、停留时长等 |
 
 一句话：**论文事实和加工状态全局一份；人和论文之间的关系每人一份。**
@@ -58,7 +58,8 @@ CREATE TABLE reading_sessions (
     seconds    INTEGER
 );
 
--- 问答历史增加用户归属
+-- 问答历史：默认共享，可追溯提问者；支持"仅自己可见"
+ALTER TABLE qa_logs ADD COLUMN visibility TEXT NOT NULL DEFAULT 'public';
 ALTER TABLE qa_logs ADD COLUMN account_id INTEGER;
 ```
 
@@ -97,12 +98,13 @@ SELECT 1, id, status, note, user_tags, updated_at FROM papers;
 未登录或不存在的 paper 直接 404；所有查询强制带 `account_id`，禁止跨用户
 读取 `user_paper_state`。
 
-## 5. DCI 问答的隔离
+## 5. DCI 问答的共享与隔离
 
 - 论文全文 `md/` 语料目录对登录用户仍可检索（论文本身公共）。
-- DCI 的 `sqlite_query` 不再允许直接查 `user_paper_state / qa_logs / accounts`；
-  元数据预筛选只暴露一个 `v_my_papers(account_id)` 视图。
-- 回答日志写入当前 `account_id`。
+- 问答默认 `visibility='public'`：后来者打开论文时能看到已有问答，避免重复提问和重复消耗 API。
+- 用户提问时可选 `visibility='private'`，只写入当前 `account_id`，其他用户不可见。
+- DCI 的 `sqlite_query` 不直接暴露 `accounts / private 问答 / user_paper_state`；
+  公共问答通过只读视图提供。
 
 ## 6. 对当前代码的影响评估
 

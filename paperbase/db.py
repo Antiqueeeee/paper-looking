@@ -13,7 +13,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Iterable, Mapping
 
-SCHEMA_VERSION = 3
+SCHEMA_VERSION = 4
 
 SCHEMA_V1 = """
 CREATE TABLE IF NOT EXISTS meta (
@@ -131,6 +131,11 @@ SCHEMA_V3 = """
 ALTER TABLE papers ADD COLUMN pdf_sha256 TEXT NOT NULL DEFAULT '';
 """
 
+SCHEMA_V4 = """
+ALTER TABLE qa_logs ADD COLUMN visibility TEXT NOT NULL DEFAULT 'public';
+ALTER TABLE qa_logs ADD COLUMN account_id INTEGER;
+"""
+
 
 def utcnow() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="seconds")
@@ -160,11 +165,11 @@ def migrate(conn: sqlite3.Connection) -> int:
         try:
             conn.executescript(SCHEMA_V3)
         except Exception:
-            # Fresh databases created by SCHEMA_V1 do not have the column yet;
-            # future base schema should include it. Ignore only the duplicate
-            # column error.
             pass
         version = 3
+    if version < 4:
+        conn.executescript(SCHEMA_V4)
+        version = 4
     if version:
         conn.execute(f"PRAGMA user_version={version}")
     conn.commit()

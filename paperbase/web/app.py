@@ -440,21 +440,33 @@ def create_app(config_path: str | None = None) -> FastAPI:
         out["by_tag"] = dict(sorted(tags.items(), key=lambda kv: -kv[1]))
         return out
 
+    def _load_qa_rows(conn, paper_id: str, limit: int = 100) -> list[dict]:
+        if not paper_id:
+            return []
+        rows = conn.execute(
+            "SELECT * FROM qa_logs WHERE paper_ids LIKE ? ORDER BY id DESC LIMIT ?",
+            (f'%"{paper_id}"%', max(1, min(limit, 200))),
+        ).fetchall()
+        out = []
+        for row in rows:
+            d = dict(row)
+            d["citations"] = json.loads(d.get("citations") or "[]")
+            d["paper_ids"] = json.loads(d.get("paper_ids") or "[]")
+            out.append(d)
+        return out
+
+    @app.get("/api/qa")
+    def qa_history(paper_id: str = "", res=Depends(resources)):
+        """All shared questions/answers for one paper (newest first)."""
+        _, _, conn = res
+        items = _load_qa_rows(conn, paper_id)
+        return {"paper_id": paper_id, "total": len(items), "items": items}
+
     @app.get("/api/qa/last")
     def qa_last(paper_id: str = "", res=Depends(resources)):
         _, _, conn = res
-        if not paper_id:
-            return {}
-        row = conn.execute(
-            "SELECT * FROM qa_logs WHERE paper_ids LIKE ? ORDER BY id DESC LIMIT 1",
-            (f'%"{paper_id}"%',),
-        ).fetchone()
-        if not row:
-            return {}
-        d = dict(row)
-        d["citations"] = json.loads(d.get("citations") or "[]")
-        d["paper_ids"] = json.loads(d.get("paper_ids") or "[]")
-        return d
+        items = _load_qa_rows(conn, paper_id, limit=1)
+        return items[0] if items else {}
 
     @app.post("/api/ask")
     def ask(body: AskBody, res=Depends(resources)):
@@ -515,9 +527,10 @@ def create_app(config_path: str | None = None) -> FastAPI:
           <summary>🤖 问这篇论文</summary>
           <textarea id="question" rows="3" placeholder="例如：这篇论文的核心方法是什么？实验用了哪些数据集？"></textarea>
           <button class="btn" onclick="askThisPaper()">提问</button>
-          <p id="lastAnswerHint" class="hint" style="display:none">以下是该论文最近一次提问的回答。</p>
           <pre id="answer" class="light" style="display:none"></pre>
           <div id="citations" class="cites"></div>
+          <h4 class="qa-history-title">历史问答（所有人可见，可复用）</h4>
+          <div id="qaHistory" class="qa-history"></div>
         </details>
         <script>
         const PAPER_ID = {paper_id_json};
@@ -533,17 +546,30 @@ def create_app(config_path: str | None = None) -> FastAPI:
             return `<a href="/reader/${{encodeURIComponent(base)}}?raw=1&lang=${{zh?'zh':'en'}}#L${{line}}" target="_blank">${{c}}</a>`;
           }}).join(' ') || '<span class="muted">无结构化引用</span>';
         }}
-        async function loadLastAnswer() {{
+        async function loadQaHistory() {{
+          const box = document.getElementById('qaHistory');
+          if (!box) return;
           try {{
-            const r = await fetch('/api/qa/last?paper_id=' + encodeURIComponent(PAPER_ID));
+            const r = await fetch('/api/qa?paper_id=' + encodeURIComponent(PAPER_ID));
             if (!r.ok) return;
             const d = await r.json();
-            if (!d.answer) return;
-            const box = document.getElementById('answer');
-            box.style.display = 'block';
-            box.textContent = d.answer + `\n\nConfidence: ${{d.confidence}} · 工具调用: ${{d.tool_calls}} · tokens: ${{(d.prompt_tokens||0)+(d.completion_tokens||0)}}`;
-            document.getElementById('citations').innerHTML = citeLinks(d.citations);
-            document.getElementById('lastAnswerHint').style.display = 'block';
+            box.innerHTML = '';
+            (d.items || []).forEach((item, idx) => {{
+              const details = document.createElement('details');
+              details.className = 'qa-item';
+              const summary = document.createElement('summary');
+              summary.textContent = 'Q' + (idx + 1) + ' · ' + item.question + ' · ' + Math.round((item.confidence || 0) * 100) + '%';
+              details.appendChild(summary);
+              const pre = document.createElement('pre');
+              pre.textContent = item.answer;
+              const cites = document.createElement('div');
+              cites.className = 'cites';
+              cites.innerHTML = citeLinks(item.citations);
+              details.appendChild(pre);
+              details.appendChild(cites);
+              box.appendChild(details);
+            }});
+            if (!d.items.length) box.innerHTML = '<p class="hint">还没有人问过这篇论文，问第一个问题吧。</p>';
           }} catch (e) {{}}
         }}
         async function askThisPaper() {{
@@ -551,7 +577,7 @@ def create_app(config_path: str | None = None) -> FastAPI:
           if (!q) {{ alert('请输入问题'); return; }}
           const box = document.getElementById('answer');
           box.style.display = 'block';
-          box.textContent = '检索中…';
+          box.textContent = '检索中，请稍候…';
           document.getElementById('citations').innerHTML = '';
           try {{
             const r = await fetch('/api/ask', {{
@@ -563,11 +589,14 @@ def create_app(config_path: str | None = None) -> FastAPI:
             const d = await r.json();
             box.textContent = d.answer + `\n\nConfidence: ${{d.confidence}} · 工具调用: ${{d.tool_calls}} · tokens: ${{(d.prompt_tokens||0)+(d.completion_tokens||0)}}`;
             document.getElementById('citations').innerHTML = citeLinks(d.citations);
+            document.getElementById('question').value = '';
+            loadQaHistory();
           }} catch (e) {{
             box.textContent = '提问失败：' + e.message;
+            loadQaHistory();
           }}
         }}
-        loadLastAnswer();
+        loadQaHistory();
         if (new URLSearchParams(location.search).get('ask') === '1' || location.hash === '#ask') {{
           const panel = document.getElementById('ask');
           if (panel) {{ panel.open = true; panel.scrollIntoView({{behavior:'smooth'}}); }}
