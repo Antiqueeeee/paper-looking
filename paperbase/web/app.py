@@ -599,7 +599,11 @@ def create_app(config_path: str | None = None) -> FastAPI:
             loadQaHistory();
           }}
         }}
-        loadQaHistory();
+        if (document.readyState === 'loading') {{
+          document.addEventListener('DOMContentLoaded', loadQaHistory);
+        }} else {{
+          loadQaHistory();
+        }}
         if (new URLSearchParams(location.search).get('ask') === '1' || location.hash === '#ask') {{
           const panel = document.getElementById('ask');
           if (panel) {{ panel.open = true; panel.scrollIntoView({{behavior:'smooth'}}); }}
