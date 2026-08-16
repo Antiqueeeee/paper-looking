@@ -8,3 +8,4 @@ config.toml
 outputs/
 /ACL-Anthology-Crawler/
 /papers/
+*.egg-info/

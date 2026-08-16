@@ -239,6 +239,22 @@ def _upsert_paper(conn: sqlite3.Connection, paper: Mapping[str, Any]) -> None:
     if not pid.strip():
         raise ValueError("paper id must not be empty")
 
+    source = str(paper.get("source", "manual"))
+    if source not in {"acl", "openalex", "crossref", "arxiv", "manual"}:
+        raise ValueError(f"paper {pid!r}: invalid source {source!r}")
+
+    year = paper.get("year")
+    if year is not None:
+        try:
+            year = int(year)
+        except (TypeError, ValueError) as exc:
+            raise ValueError(f"paper {pid!r}: invalid year {year!r}") from exc
+
+    for field in ("url", "pdf_url"):
+        value = str(paper.get(field, "") or "")
+        if value and not value.startswith(("http://", "https://")):
+            raise ValueError(f"paper {pid!r}: invalid {field} {value!r}")
+
     conn.execute(
         """
         INSERT INTO papers(
@@ -259,11 +275,11 @@ def _upsert_paper(conn: sqlite3.Connection, paper: Mapping[str, Any]) -> None:
         """,
         (
             pid,
-            str(paper.get("source", "manual")),
+            source,
             title,
             dumps_json(paper.get("authors", [])),
             str(paper.get("abstract", "") or ""),
-            paper.get("year"),
+            year,
             str(paper.get("venue", "") or ""),
             str(paper.get("url", "") or ""),
             str(paper.get("pdf_url", "") or ""),

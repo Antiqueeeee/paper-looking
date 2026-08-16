@@ -124,7 +124,7 @@ class _FakeSource:
     def __init__(self):
         self.last_errors = []
     def fetch_incremental(self, since, state):
-        return [PaperDraft(id="2026.x-1.1", source="fake", title="T", year=2026)]
+        return [PaperDraft(id="2026.x-1.1", source="acl", title="T", year=2026)]
 
 
 def test_fetch_source_orchestration(tmp_path, conn, monkeypatch):
@@ -136,7 +136,7 @@ def test_fetch_source_orchestration(tmp_path, conn, monkeypatch):
     assert report.status == "success"
     assert report.drafts == 1
     assert report.after == 1
-    assert get_paper(conn, "2026.x-1.1")["source"] == "fake"
+    assert get_paper(conn, "2026.x-1.1")["source"] == "acl"
     row = conn.execute("SELECT * FROM fetch_runs WHERE source='fake'").fetchone()
     assert row["status"] == "success"
     assert row["new_count"] == 1

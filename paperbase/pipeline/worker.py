@@ -8,7 +8,7 @@ from paperbase.db import init_db
 from paperbase.paths import PaperPaths
 from paperbase.pipeline.handlers import process_task
 from paperbase.storage import disk_usage_ratio
-from paperbase.tasks import claim_next_task, reset_running_tasks
+from paperbase.tasks import claim_next_task, fail_task, reset_running_tasks
 
 logger = logging.getLogger(__name__)
 
@@ -104,7 +104,11 @@ def run_task_loop(conn, config: dict, paths: PaperPaths, *, once: bool = False, 
             return processed
         task = claimed[0]
         logger.info("processing task %s %s for %s", task["id"], task["task_type"], task["paper_id"])
-        process_task(conn, config, paths, task)
+        try:
+            process_task(conn, config, paths, task)
+        except Exception:
+            logger.exception("task handler crashed for %s", task["id"])
+            fail_task(conn, int(task["id"]), "handler crashed; see worker log")
         processed += 1
 
         # Budget blocks release the task back to queued without consuming an

@@ -10,6 +10,7 @@ from paperbase.dci.agent import DCIQAAgent
 from paperbase.db import init_db, utcnow
 from paperbase.paths import PaperPaths
 from paperbase.pipeline.digest import build_daily_digest, queue_papers
+from paperbase.pipeline.filter import apply_rules
 from paperbase.pipeline.pdf import ingest_uploaded_pdf
 from paperbase.sources import fetch_source
 from paperbase.sources.import_legacy import import_legacy
@@ -36,6 +37,9 @@ def cmd_init(args) -> int:
         print(f"first errors (see {error_log}):")
         for line in report.errors[:10]:
             print("  -", line)
+    if report.imported:
+        changed = apply_rules(conn)
+        print(f"interest rules applied: {changed} papers tagged")
     return 0 if report.imported else 1
 
 
@@ -56,6 +60,13 @@ def cmd_fetch(args) -> int:
         for err in report.errors[:5]:
             print("  -", err)
     return rc
+
+
+def cmd_scan(args) -> int:
+    _, _, conn = _open_db(args)
+    changed = apply_rules(conn, args.ids)
+    print(f"tags updated: {changed} papers")
+    return 0
 
 
 def cmd_today(args) -> int:
@@ -106,6 +117,10 @@ def build_parser() -> argparse.ArgumentParser:
     p_fetch.add_argument("--sources", nargs="+", choices=["acl", "openalex", "arxiv"])
     p_fetch.add_argument("--since", help="ISO datetime lower bound (optional)")
     p_fetch.set_defaults(func=cmd_fetch)
+
+    p_scan = sub.add_parser("scan", help="run interest rules against papers")
+    p_scan.add_argument("--ids", nargs="+", help="only these paper ids")
+    p_scan.set_defaults(func=cmd_scan)
 
     p_today = sub.add_parser("today", help="generate/print today's digest")
     p_today.add_argument("--no-translate", action="store_true", help="skip metadata translation")

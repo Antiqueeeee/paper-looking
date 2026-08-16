@@ -145,14 +145,21 @@ def parse_volume_papers(soup: BeautifulSoup, volume_id: str) -> list[dict]:
 class ACLSource:
     name = "acl"
 
-    def __init__(self, years: Iterable[str] | None = None, concurrency: int = 4):
+    def __init__(self, years: Iterable[str] | None = None, concurrency: int = 4, cache_path: str | Path | None = None):
         self.years = [str(y) for y in (years or [])]
         self.concurrency = max(1, int(concurrency))
+        self.cache_path = Path(cache_path) if cache_path else None
         self.last_errors: list[str] = []
 
     def fetch_incremental(self, since: str, state: SourceState) -> list[PaperDraft]:
-        """Fetch all not-yet-done volumes for configured years."""
-        return self.fetch_papers(self.years, set(state.cursor.get("done", [])), progress=None)
+        """Fetch all not-yet-done volumes for configured years.
+
+        Updates `state.cursor["done"]` in-place, so the caller's persistent
+        checkpoint keeps resumability across process restarts.
+        """
+        drafts = self.fetch_papers(self.years, set(state.cursor.get("done", [])), progress=None)
+        state.cursor["done"] = sorted(set(state.cursor.get("done", [])) | self._last_done)
+        return drafts
 
     def fetch_papers(
         self,
@@ -162,7 +169,8 @@ class ACLSource:
     ) -> list[PaperDraft]:
         years = list(years) or self.years
         done = set(done_volumes)
-        volumes = get_volumes_for_years(years, cache_path=None)
+        self._last_done: set[str] = set()
+        volumes = get_volumes_for_years(years, cache_path=self.cache_path)
         todo = [v for v in volumes if v["id"] not in done]
         self.last_errors = []
 
@@ -193,6 +201,7 @@ class ACLSource:
                     with lock:
                         out.extend(drafts)
                         done.add(volume_id)
+                        self._last_done.add(volume_id)
                         completed += 1
                         if progress:
                             progress(volume_id, completed)

@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass, field
+from pathlib import Path
 from paperbase.db import bulk_upsert_papers, count_papers, get_meta, set_meta, utcnow
 from paperbase.models import FetchStatus, PaperDraft, PaperSource, SourceState
 from paperbase.sources.acl import ACLSource
@@ -94,6 +95,9 @@ def save_source_state(conn, state: SourceState, *, error: str = "") -> None:
 def fetch_source(conn, config: dict, name: str, *, since: str | None = None) -> FetchReport:
     """Run one source incrementally and persist its results."""
     source = get_source(name, config)
+    if isinstance(source, ACLSource) and not getattr(source, "cache_path", None):
+        data_dir = config.get("paths", {}).get("data_dir", "./data")
+        source.cache_path = str(Path(data_dir) / "cache" / "acl" / "volumes.json")
     state = load_source_state(conn, name)
     before = count_papers(conn)
     now = utcnow()
