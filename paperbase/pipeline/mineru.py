@@ -20,7 +20,7 @@ import yaml
 
 from paperbase.db import get_paper, set_local_file, set_parse_status, utcnow
 from paperbase.paths import PaperPaths, safe_component
-from paperbase.tasks import enqueue_task, fail_task, finish_task
+from paperbase.tasks import enqueue_task, fail_task, finish_task, release_task
 
 logger = logging.getLogger(__name__)
 
@@ -204,7 +204,7 @@ def run_parse_task(
 
     limit = int(config.get("budgets", {}).get("parse_daily_count", 50))
     if limit > 0 and daily_parse_count(conn) >= limit:
-        fail_task(conn, task_id, "daily parse budget exhausted")
+        release_task(conn, task_id, "daily parse budget exhausted")
         return
 
     if client is None:

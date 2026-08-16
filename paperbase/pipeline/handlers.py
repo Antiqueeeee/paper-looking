@@ -4,6 +4,7 @@ from __future__ import annotations
 from paperbase.db import get_paper, set_pdf_status
 from paperbase.paths import PaperPaths
 from paperbase.tasks import enqueue_task, fail_task, finish_task, content_hash
+from paperbase.pipeline.fulltext_translate import run_translate_full_task
 from paperbase.pipeline.mineru import run_parse_task
 from paperbase.pipeline.pdf import download_pdf
 from paperbase.pipeline.storage_manager import get_object_store
@@ -42,8 +43,7 @@ def process_task(conn, config: dict, paths: PaperPaths, task: dict) -> str:
     elif task_type == "parse_pdf":
         run_parse_task(conn, config, paths, task)
     elif task_type == "translate_full":
-        # Implemented in Phase 4; leave queued if handler missing.
-        fail_task(conn, int(task["id"]), "translate_full handler not implemented yet")
+        run_translate_full_task(conn, config, paths, task)
     elif task_type == "translate_meta":
         # Metadata translation is driven by digest directly.
         finish_task(conn, int(task["id"]), {"skipped": True})
