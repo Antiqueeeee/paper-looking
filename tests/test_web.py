@@ -31,6 +31,15 @@ def client(tmp_path):
         yield c
 
 
+def test_index_and_digest_pages(client):
+    r = client.get("/")
+    assert r.status_code == 200
+    assert "今日早报" in r.text
+    assert "论文库" in r.text
+    r = client.get("/digest")
+    assert r.status_code in (200, 404)  # digest may or may not exist yet
+
+
 def test_health_and_stats(client):
     r = client.get("/api/health")
     assert r.status_code == 200
@@ -75,3 +84,20 @@ def test_upload_and_reader_flow(client, tmp_path):
     # Reader should 404 before parsing, not 500.
     r = client.get(f"/reader/{paper_id}")
     assert r.status_code == 404
+
+    # Once markdown exists, raw mode exposes stable line anchors for citations.
+    from paperbase.config import load_config
+    from paperbase.paths import PaperPaths as PP
+    from paperbase.db import init_db as init_db2, set_local_file as set_local_file2
+    from paperbase.pipeline.mineru import write_markdown_atomic
+
+    cfg = load_config(client.cfg_path)
+    paths2 = PP(cfg["paths"]["data_dir"])
+    conn2 = init_db2(paths2.db_path)
+    md_path = paths2.paper_md(conn2.execute("SELECT * FROM papers WHERE id=?", (paper_id,)).fetchone())
+    write_markdown_atomic(md_path, "line one\nline two\n")
+    set_local_file2(conn2, paper_id, md_path=str(md_path))
+    conn2.close()
+    r = client.get(f"/reader/{paper_id}?raw=1")
+    assert r.status_code == 200
+    assert 'id="L1"' in r.text

@@ -25,46 +25,9 @@ from paperbase.db import (
 )
 from paperbase.paths import PaperPaths
 
-INDEX_HTML = """<!doctype html>
-<html lang="zh-CN">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>PaperBase</title>
-<style>
- body{font-family:system-ui,sans-serif;margin:1rem;line-height:1.5;background:#fafafa;color:#222}
- h1{font-size:1.4rem} section{background:#fff;border:1px solid #ddd;border-radius:8px;padding:1rem;margin:1rem 0}
- input,textarea,button{font:inherit;padding:.5rem;margin:.2rem 0;width:100%;box-sizing:border-box}
- button{background:#2563eb;color:#fff;border:0;border-radius:6px;cursor:pointer}
- pre{white-space:pre-wrap;background:#f4f4f4;padding:.6rem;border-radius:6px}
- .row{display:flex;gap:.5rem} .row>*{flex:1}
- a{color:#2563eb}
-</style>
-</head>
-<body>
-<h1>PaperBase 个人论文库</h1>
-<section><h2>每日早报</h2><button onclick="loadDigest()">加载今日早报</button><pre id="digest">点击加载。</pre></section>
-<section><h2>勾选论文</h2>
-<input id="qids" placeholder="论文 ID，多个用空格分隔"><br>
-<button onclick="queuePapers()">加入阅读队列</button></section>
-<section><h2>搜索</h2>
-<div class="row"><input id="q" placeholder="标题/摘要关键词"><input id="tag" placeholder="标签 kg/rag/kbqa"></div>
-<button onclick="searchPapers()">搜索</button><pre id="results"></pre></section>
-<section><h2>上传 PDF</h2><input type="file" id="pdf" accept="application/pdf"><button onclick="uploadPdf()">上传</button><pre id="uploadResult"></pre></section>
-<section><h2>问 AI</h2>
-<input id="askPaper" placeholder="单篇论文 ID（可留空=全库）">
-<textarea id="question" rows="3" placeholder="例如：这篇论文的核心方法是什么？"></textarea>
-<button onclick="ask()">提问</button><pre id="answer"></pre></section>
-<section><h2>接口</h2><p><a href="/docs">API 文档</a> · <a href="/api/stats">统计</a> · <a href="/api/health">健康检查</a></p></section>
-<script>
-async function j(url, opts={}){const r=await fetch(url,opts);const d=await r.json();return d}
-function loadDigest(){j('/api/digest/today').then(d=>document.getElementById('digest').textContent=d.content).catch(e=>document.getElementById('digest').textContent='暂无早报')}
-function queuePapers(){const ids=document.getElementById('qids').value.split(/\\s+/).filter(Boolean);j('/api/queue',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({ids})}).then(d=>alert('已加入：'+d.queued))}
-function searchPapers(){const q=document.getElementById('q').value;const tag=document.getElementById('tag').value;j('/api/papers?q='+encodeURIComponent(q)+'&tag='+encodeURIComponent(tag)+'&limit=20').then(d=>{document.getElementById('results').textContent=JSON.stringify(d.items,null,2)})}
-async function uploadPdf(){const f=document.getElementById('pdf').files[0];if(!f)return;const fd=new FormData();fd.append('file',f);const r=await fetch('/api/upload',{method:'POST',body:fd});document.getElementById('uploadResult').textContent=JSON.stringify(await r.json(),null,2)}
-function ask(){const body={question:document.getElementById('question').value,mode:'library'};const pid=document.getElementById('askPaper').value.trim();if(pid){body.mode='paper';body.paper_ids=[pid]}j('/api/ask',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}).then(d=>{document.getElementById('answer').textContent=d.answer+'\\n\\n'+JSON.stringify(d.citations)})}
-</script>
-</body></html>"""
+def _index_html() -> str:
+    return (Path(__file__).with_name("index.html")).read_text(encoding="utf-8")
+
 
 
 class QueueBody(BaseModel):
@@ -98,7 +61,25 @@ def create_app(config_path: str | None = None) -> FastAPI:
 
     @app.get("/", response_class=HTMLResponse, include_in_schema=False)
     def index():
-        return INDEX_HTML
+        return _index_html()
+
+    @app.get("/digest", response_class=HTMLResponse, include_in_schema=False)
+    def digest_page(res=Depends(resources)):
+        _, paths, _conn = res
+        digest_dir = paths.root / "digests"
+        files = sorted(digest_dir.glob("*.md"), reverse=True) if digest_dir.exists() else []
+        if not files:
+            return "<html><body><h1>暂无早报</h1><p>先在服务器运行 <code>paper today</code></p></body></html>"
+        import markdown as md
+
+        text = files[0].read_text(encoding="utf-8")
+        body = md.markdown(text, extensions=["tables", "fenced_code"])
+        return (
+            f"<html><head><meta charset='utf-8'><meta name='viewport' content='width=device-width'>"
+            f"<title>论文早报</title><style>body{{font-family:system-ui,sans-serif;max-width:900px;margin:auto;padding:1rem}}"
+            f"table{{border-collapse:collapse}}td,th{{border:1px solid #ccc;padding:.35rem}}"
+            f"</style></head><body><a href='/'>← 返回</a>{body}</body></html>"
+        )
 
     @app.get("/api/health")
     def health(res=Depends(resources)):
@@ -274,7 +255,7 @@ def create_app(config_path: str | None = None) -> FastAPI:
         return answer.__dict__
 
     @app.get("/reader/{paper_id}", response_class=HTMLResponse)
-    def reader(paper_id: str, lang: str = "en", res=Depends(resources)):
+    def reader(paper_id: str, lang: str = "en", raw: bool = False, res=Depends(resources)):
         _, paths, conn = res
         paper = get_paper(conn, paper_id)
         if not paper:
@@ -285,12 +266,27 @@ def create_app(config_path: str | None = None) -> FastAPI:
         import markdown as md
 
         text = Path(path_value).read_text(encoding="utf-8")
+        if raw:
+            lines = text.splitlines()
+            body = "\n".join(
+                f'<span id="L{i+1}">{i+1}: {html_mod.escape(line)}</span>'
+                for i, line in enumerate(lines)
+            )
+            return (
+                f"<html><head><meta charset='utf-8'><meta name='viewport' content='width=device-width'>"
+                f"<title>{html_mod.escape(paper['title'])}</title><style>"
+                f"body{{font-family:monospace;max-width:1000px;margin:auto;padding:1rem}}"
+                f"pre{{white-space:pre-wrap}}span{{display:block;min-height:1.1em}}"
+                f"span:target{{background:#fef08a}}"
+                f"</style></head><body><p><a href='/'>← 返回</a> | <a href='?raw=0&lang={lang}'>渲染版</a></p>"
+                f"<h1>{html_mod.escape(paper['title'])}</h1><pre>{body}</pre></body></html>"
+            )
         body_html = md.markdown(text, extensions=["tables", "fenced_code"])
         return (
             f"<html><head><meta charset='utf-8'><meta name='viewport' content='width=device-width'>"
             f"<title>{html_mod.escape(paper['title'])}</title><style>body{{font-family:serif;max-width:960px;margin:auto;padding:1rem}}"
             f"pre{{white-space:pre-wrap}}table{{border-collapse:collapse}}td,th{{border:1px solid #ccc;padding:.3rem}}"
-            f"</style></head><body><p><a href='/'>← 返回</a> | <a href='?lang=zh'>中文</a> | <a href='?lang=en'>English</a></p>"
+            f"</style></head><body><p><a href='/'>← 返回</a> | <a href='?lang=zh'>中文</a> | <a href='?lang=en'>English</a> | <a href='?raw=1'>原文行号</a></p>"
             f"<h1>{html_mod.escape(paper['title'])}</h1>{body_html}</body></html>"
         )
 

@@ -1,0 +1,182 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PaperBase · 个人论文库</title>
+<style>
+:root{--bg:#f4f6fb;--card:#ffffff;--border:#e2e8f0;--text:#1e293b;--muted:#64748b;--primary:#2563eb;--ok:#16a34a;--warn:#d97706;--bad:#dc2626}
+*{box-sizing:border-box}
+body{margin:0;font-family:system-ui,-apple-system,"Segoe UI",Roboto,"PingFang SC","Microsoft YaHei",sans-serif;background:var(--bg);color:var(--text);line-height:1.55}
+header{background:#0f172a;color:#fff;padding:.8rem 1rem;display:flex;align-items:center;gap:1rem;flex-wrap:wrap}
+header h1{font-size:1.1rem;margin:0;font-weight:700}
+nav{display:flex;gap:.4rem;flex-wrap:wrap}
+nav button{background:#1e293b;color:#cbd5e1;border:1px solid #334155;padding:.45rem .8rem;border-radius:8px;cursor:pointer;font-size:.9rem}
+nav button.active,nav button:hover{background:var(--primary);color:#fff;border-color:var(--primary)}
+main{max-width:1100px;margin:0 auto;padding:1rem}
+.view{display:none}.view.active{display:block}
+.card{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:1rem;margin-bottom:1rem}
+.row{display:flex;gap:.5rem;flex-wrap:wrap}.row>*{flex:1;min-width:120px}
+input,select,textarea,button{font:inherit}
+input,select,textarea{width:100%;padding:.55rem .65rem;border:1px solid var(--border);border-radius:8px;background:#fff}
+textarea{resize:vertical}
+button.btn{background:var(--primary);color:#fff;border:0;padding:.55rem 1rem;border-radius:8px;cursor:pointer;font-weight:600}
+button.ghost{background:#eef2ff;color:var(--primary);border:1px solid #c7d2fe}
+pre{background:#0f172a;color:#e2e8f0;padding:1rem;border-radius:10px;overflow:auto;white-space:pre-wrap;font-size:.88rem}
+pre.light{background:#f8fafc;color:#1e293b;border:1px solid var(--border);white-space:pre-wrap}
+.paper{border-bottom:1px solid var(--border);padding:.8rem 0}
+.paper:last-child{border-bottom:0}
+.paper h3{margin:.1rem 0;font-size:1rem}
+.paper h3 a{color:var(--text);text-decoration:none}
+.paper h3 a:hover{color:var(--primary)}
+.paper .zh{color:var(--muted);font-size:.92rem;margin:.15rem 0}
+.paper .meta{font-size:.8rem;color:var(--muted)}
+.badges span{display:inline-block;background:#eef2ff;color:#3730a3;border-radius:99px;padding:.05rem .5rem;font-size:.75rem;margin-right:.3rem}
+.badges .st{background:#f0fdf4;color:var(--ok)}.badges .st.warn{background:#fffbeb;color:var(--warn)}
+.cite a{color:#2563eb;text-decoration:none;margin-right:.5rem}
+.muted{color:var(--muted);font-size:.88rem}
+.hint{color:var(--muted);font-size:.85rem}
+table{border-collapse:collapse;width:100%}td,th{border:1px solid var(--border);padding:.4rem .6rem;font-size:.9rem;text-align:left}
+.actions{display:flex;gap:.5rem;margin-top:.4rem}
+#toast{position:fixed;bottom:1rem;right:1rem;background:#0f172a;color:#fff;padding:.6rem 1rem;border-radius:8px;display:none}
+</style>
+</head>
+<body>
+<header>
+  <h1>📚 PaperBase</h1>
+  <nav>
+    <button class="active" onclick="show('digest')">今日早报</button>
+    <button onclick="show('papers')">论文库</button>
+    <button onclick="show('upload')">上传 PDF</button>
+    <button onclick="show('ask')">问 AI</button>
+    <button onclick="show('stats')">统计</button>
+  </nav>
+</header>
+<main>
+  <section id="digest" class="view active">
+    <div class="card">
+      <div class="row"><h2 style="margin:0;flex:1">今日早报</h2><button class="btn" onclick="loadDigest()">刷新早报</button><a href="/digest" target="_blank"><button class="ghost">网页版早报</button></a></div>
+      <p class="hint">每天 07:30 自动抓取，08:00 前生成。也可以在服务器执行 <code>paper today</code>。</p>
+      <pre id="digestText" class="light">加载中…</pre>
+    </div>
+  </section>
+
+  <section id="papers" class="view">
+    <div class="card">
+      <div class="row">
+        <input id="q" placeholder="标题 / 摘要关键词">
+        <input id="tag" placeholder="标签：kg / rag / kbqa">
+        <input id="year" placeholder="年份：2026" type="number">
+        <select id="status"><option value="">全部状态</option><option value="new">new</option><option value="in_queue">in_queue</option><option value="reading">reading</option><option value="done">done</option><option value="later">later</option></select>
+      </div>
+      <div class="actions"><button class="btn" onclick="searchPapers()">搜索</button><button class="ghost" onclick="searchPapers()">刷新</button></div>
+      <p class="hint" id="searchMeta"></p>
+      <div id="paperList"></div>
+    </div>
+  </section>
+
+  <section id="upload" class="view">
+    <div class="card">
+      <h2>上传 PDF</h2>
+      <input type="file" id="pdfFile" accept="application/pdf"><br><br>
+      <input id="uploadPaperId" placeholder="已有论文 ID（可选，留空自动匹配/新建）">
+      <input id="uploadTitle" placeholder="论文标题（新建记录时使用，可选）"><br><br>
+      <button class="btn" onclick="uploadPdf()">上传并加入解析队列</button>
+      <pre id="uploadResult" class="light" style="display:none"></pre>
+    </div>
+  </section>
+
+  <section id="ask" class="view">
+    <div class="card">
+      <h2>问 AI</h2>
+      <input id="askPaperId" placeholder="单篇论文 ID（留空 = 全库深度问答）">
+      <textarea id="question" rows="4" placeholder="例如：这篇论文的核心方法是什么？实验用了哪些数据集？"></textarea><br>
+      <button class="btn" onclick="askAi()">提问</button>
+      <p class="hint">回答基于你库中的论文原文，使用 rg 检索，引用可点击定位。</p>
+      <pre id="answer" class="light" style="display:none"></pre>
+      <div id="citations" class="cite"></div>
+    </div>
+  </section>
+
+  <section id="stats" class="view">
+    <div class="card"><h2>库统计</h2><div id="statsBox" class="muted">加载中…</div></div>
+  </section>
+</main>
+<div id="toast"></div>
+<script>
+const $=id=>document.getElementById(id);
+function show(name){
+  document.querySelectorAll('.view').forEach(v=>v.classList.remove('active'));
+  document.querySelectorAll('nav button').forEach((b,i)=>b.classList.toggle('active', b.textContent.trim()===({
+    digest:'今日早报',papers:'论文库',upload:'上传 PDF',ask:'问 AI',stats:'统计'}[name])));
+  $(name).classList.add('active');
+  if(name==='digest')loadDigest();
+  if(name==='papers')searchPapers();
+  if(name==='stats')loadStats();
+}
+function toast(m){const t=$('toast');t.textContent=m;t.style.display='block';setTimeout(()=>t.style.display='none',2600)}
+async function j(url,opts={}){const r=await fetch(url,opts);if(!r.ok){const e=await r.text();throw new Error(e||r.status)}return r.json()}
+function esc(s){return (s||'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}
+
+async function loadDigest(){
+  try{const d=await j('/api/digest/today');$('digestText').textContent=d.content}
+  catch(e){$('digestText').textContent='暂无早报。先在服务器运行：paper today'}
+}
+async function searchPapers(){
+  const p=new URLSearchParams({q:$('q').value.trim(),tag:$('tag').value.trim(),year:$('year').value.trim(),status:$('status').value,limit:'50'});
+  try{
+    const d=await j('/api/papers?'+p);
+    $('searchMeta').textContent=`共 ${d.total} 篇，显示 ${d.items.length} 篇`;
+    $('paperList').innerHTML=d.items.map(x=>`
+      <div class="paper">
+        <h3><a href="/reader/${encodeURIComponent(x.id)}">${esc(x.title)}</a></h3>
+        ${x.title_zh?`<div class="zh">${esc(x.title_zh)}</div>`:''}
+        <div class="meta">[${x.year||'?'}] ${esc(x.venue||'-')} · ${esc(x.source)} · pdf:${esc(x.pdf_status)} · parse:${esc(x.parse_status)} · translate:${esc(x.translate_status)}</div>
+        <div class="badges">${(x.tags||[]).map(t=>`<span>${esc(t)}</span>`).join('')}<span class="st">${esc(x.status)}</span></div>
+        <div class="actions">
+          <button class="btn" onclick="queueOne('${esc(x.id)}')">加入阅读队列</button>
+          <a href="/api/papers/${encodeURIComponent(x.id)}" target="_blank"><button class="ghost">JSON</button></a>
+          <a href="/reader/${encodeURIComponent(x.id)}?lang=zh"><button class="ghost">中文阅读</button></a>
+        </div>
+      </div>`).join('') || '<p class="muted">没有结果</p>';
+  }catch(e){toast('搜索失败：'+e.message)}
+}
+async function queueOne(id){try{const d=await j('/api/queue',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({ids:[id]})});toast('已加入队列')}catch(e){toast(e.message)}}
+async function uploadPdf(){
+  const f=$('pdfFile').files[0];if(!f){toast('请选择 PDF');return}
+  const fd=new FormData();fd.append('file',f);
+  if($('uploadPaperId').value.trim())fd.append('paper_id',$('uploadPaperId').value.trim());
+  if($('uploadTitle').value.trim())fd.append('title',$('uploadTitle').value.trim());
+  try{const d=await j('/api/upload',{method:'POST',body:fd});$('uploadResult').style.display='block';$('uploadResult').textContent=JSON.stringify(d,null,2);toast('上传成功：'+d.id)}catch(e){toast('上传失败：'+e.message)}
+}
+async function askAi(){
+  const pid=$('askPaperId').value.trim();
+  const body={question:$('question').value.trim(),mode:pid?'paper':'library',paper_ids:pid?[pid]:[]};
+  if(!body.question){toast('请输入问题');return}
+  $('answer').style.display='block';$('answer').textContent='检索中…';$('citations').innerHTML='';
+  try{
+    const d=await j('/api/ask',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+    $('answer').textContent=d.answer+`\n\nConfidence: ${d.confidence} · tool_calls: ${d.tool_calls} · tokens: ${(d.prompt_tokens||0)+(d.completion_tokens||0)}`;
+    const pidForCite = pid || (d.paper_ids&&d.paper_ids[0]) || '';
+    $('citations').innerHTML=(d.citations||[]).map(c=>{
+      const m=c.match(/^\[([^:\]]+):([0-9]+(?:-[0-9]+)?)\]$/);
+      if(!m)return `<span>${esc(c)}</span>`;
+      const id=(m[1].replace(/\.md$/, '').split('/').pop())||pidForCite;
+      return `<a href="/reader/${encodeURIComponent(id)}?raw=1#L${m[2].split('-')[0]}" target="_blank">${esc(c)}</a>`;
+    }).join(' ') || '<span class="muted">无结构化引用</span>';
+  }catch(e){$('answer').textContent='提问失败：'+e.message}
+}
+async function loadStats(){
+  try{const d=await j('/api/stats');const rows=o=>Object.entries(o||{}).map(([k,v])=>`<tr><td>${esc(k)}</td><td>${v}</td></tr>`).join('');
+    $('statsBox').innerHTML=`<h3>总数：${d.papers}</h3>
+      <h4>来源</h4><table>${rows(d.by_source)}</table>
+      <h4>年份</h4><table>${rows(d.by_year)}</table>
+      <h4>阅读状态</h4><table>${rows(d.by_status)}</table>
+      <h4>PDF 状态</h4><table>${rows(d.by_pdf_status)}</table>
+      <h4>解析状态</h4><table>${rows(d.by_parse_status)}</table>
+      <h4>标签</h4><table>${rows(d.by_tag)}</table>`}
+  catch(e){$('statsBox').textContent=e.message}
+}
+loadDigest();
+</script>
+</body></html>

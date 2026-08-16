@@ -4,7 +4,7 @@ from __future__ import annotations
 import pytest
 
 from paperbase.config import load_config
-from paperbase.llm_providers import PRESETS, build_llm_client, resolve_llm_config
+from paperbase.llm_providers import build_llm_client, resolve_llm_config
 
 
 def test_default_provider_is_deepseek():

@@ -28,6 +28,9 @@ dev = ["pytest>=8.0", "httpx>=0.27"]
 [tool.setuptools.packages.find]
 include = ["paperbase*"]
 
+[tool.setuptools.package-data]
+paperbase = ["web/index.html"]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-q"
