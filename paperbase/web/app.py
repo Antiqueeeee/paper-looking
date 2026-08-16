@@ -75,9 +75,11 @@ def create_app(config_path: str | None = None) -> FastAPI:
         text = files[0].read_text(encoding="utf-8")
         body = md.markdown(text, extensions=["tables", "fenced_code"])
         return (
-            f"<html><head><meta charset='utf-8'><meta name='viewport' content='width=device-width'>"
-            f"<title>论文早报</title><style>body{{font-family:system-ui,sans-serif;max-width:900px;margin:auto;padding:1rem}}"
-            f"table{{border-collapse:collapse}}td,th{{border:1px solid #ccc;padding:.35rem}}"
+            f"<html><head><meta charset='utf-8'><meta name='viewport' content='width=device-width, initial-scale=1, viewport-fit=cover'>"
+            f"<title>论文早报</title><style>body{{font-family:system-ui,sans-serif;max-width:900px;margin:auto;padding:1rem;line-height:1.6}}"
+            f"table{{border-collapse:collapse;display:block;overflow-x:auto}}td,th{{border:1px solid #ccc;padding:.35rem}}"
+            f"a{{color:#2563eb}}"
+            f"@media(max-width:640px){{body{{padding:.5rem}}h1{{font-size:1.3rem}}td,th{{padding:.3rem;font-size:.85rem}}}}"
             f"</style></head><body><a href='/'>← 返回</a>{body}</body></html>"
         )
 
@@ -273,19 +275,22 @@ def create_app(config_path: str | None = None) -> FastAPI:
                 for i, line in enumerate(lines)
             )
             return (
-                f"<html><head><meta charset='utf-8'><meta name='viewport' content='width=device-width'>"
+                f"<html><head><meta charset='utf-8'><meta name='viewport' content='width=device-width, initial-scale=1, viewport-fit=cover'>"
                 f"<title>{html_mod.escape(paper['title'])}</title><style>"
-                f"body{{font-family:monospace;max-width:1000px;margin:auto;padding:1rem}}"
-                f"pre{{white-space:pre-wrap}}span{{display:block;min-height:1.1em}}"
+                f"body{{font-family:monospace;max-width:1000px;margin:auto;padding:1rem;font-size:14px}}"
+                f"pre{{white-space:pre-wrap;overflow-x:auto}}span{{display:block;min-height:1.1em}}"
                 f"span:target{{background:#fef08a}}"
+                f"@media(max-width:640px){{body{{padding:.5rem;font-size:12px}}}}"
                 f"</style></head><body><p><a href='/'>← 返回</a> | <a href='?raw=0&lang={lang}'>渲染版</a></p>"
                 f"<h1>{html_mod.escape(paper['title'])}</h1><pre>{body}</pre></body></html>"
             )
         body_html = md.markdown(text, extensions=["tables", "fenced_code"])
         return (
-            f"<html><head><meta charset='utf-8'><meta name='viewport' content='width=device-width'>"
-            f"<title>{html_mod.escape(paper['title'])}</title><style>body{{font-family:serif;max-width:960px;margin:auto;padding:1rem}}"
-            f"pre{{white-space:pre-wrap}}table{{border-collapse:collapse}}td,th{{border:1px solid #ccc;padding:.3rem}}"
+            f"<html><head><meta charset='utf-8'><meta name='viewport' content='width=device-width, initial-scale=1, viewport-fit=cover'>"
+            f"<title>{html_mod.escape(paper['title'])}</title><style>body{{font-family:serif;max-width:960px;margin:auto;padding:1rem;line-height:1.7}}"
+            f"pre{{white-space:pre-wrap;overflow-x:auto}}table{{border-collapse:collapse;display:block;overflow-x:auto}}td,th{{border:1px solid #ccc;padding:.3rem}}"
+            f"img{{max-width:100%}}"
+            f"@media(max-width:640px){{body{{padding:.5rem;font-size:15px}}h1{{font-size:1.3rem}}td,th{{padding:.25rem;font-size:.8rem}}}}"
             f"</style></head><body><p><a href='/'>← 返回</a> | <a href='?lang=zh'>中文</a> | <a href='?lang=en'>English</a> | <a href='?raw=1'>原文行号</a></p>"
             f"<h1>{html_mod.escape(paper['title'])}</h1>{body_html}</body></html>"
         )
