@@ -9,7 +9,7 @@ import tempfile
 from pathlib import Path
 from typing import Any
 
-from fastapi import Depends, FastAPI, File, HTTPException, UploadFile
+from fastapi import Depends, FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.responses import HTMLResponse
 from pydantic import BaseModel, Field
 
@@ -28,6 +28,38 @@ from paperbase.paths import PaperPaths
 
 def _index_html() -> str:
     return (Path(__file__).with_name("index.html")).read_text(encoding="utf-8")
+
+
+def _status_widget(paper: dict) -> str:
+    """Read-status controls embedded in the reader page."""
+    pid = json.dumps(paper["id"], ensure_ascii=False)
+    labels = {
+        "new": "新收录", "in_queue": "待读队列", "reading": "在读",
+        "done": "已读", "later": "稍后",
+    }
+    current = labels.get(paper.get("status"), paper.get("status"))
+    return f"""
+    <span id="paperStatus" class="status-pill">状态：{html_mod.escape(current)}</span>
+    <button class="status-btn" onclick="setPaperStatus('done')">标记已读</button>
+    <button class="status-btn ghost" onclick="setPaperStatus('later')">稍后再说</button>
+    <script>
+    const PAPER_STATUS_ID = {pid};
+    async function setPaperStatus(st) {{
+      try {{
+        const r = await fetch('/api/papers/' + encodeURIComponent(PAPER_STATUS_ID), {{
+          method: 'PATCH',
+          headers: {{'Content-Type': 'application/json'}},
+          body: JSON.stringify({{status: st}})
+        }});
+        if (!r.ok) throw new Error(await r.text());
+        const d = await r.json();
+        const names = {{new:'新收录', in_queue:'待读队列', reading:'在读', done:'已读', later:'稍后'}};
+        const el = document.getElementById('paperStatus');
+        if (el) el.textContent = '状态：' + (names[d.status] || d.status);
+      }} catch (e) {{ alert('更新失败：' + e.message); }}
+    }}
+    </script>
+    """
 
 
 
@@ -196,6 +228,34 @@ def create_app(config_path: str | None = None) -> FastAPI:
             set_note(conn, paper_id, body.note)
         return get_paper(conn, paper_id)
 
+    @app.get("/api/queue")
+    def queue_list(res=Depends(resources)):
+        """Papers currently in the reading pipeline plus their task status."""
+        _, _, conn = res
+        papers = [
+            row_to_paper(r)
+            for r in conn.execute(
+                "SELECT * FROM papers WHERE status IN ('in_queue','reading') "
+                "ORDER BY updated_at DESC, year DESC LIMIT 200"
+            ).fetchall()
+        ]
+        ids = [p["id"] for p in papers]
+        task_rows = []
+        if ids:
+            placeholders = ",".join("?" for _ in ids)
+            task_rows = conn.execute(
+                f"SELECT paper_id, task_type, status FROM tasks WHERE paper_id IN ({placeholders})",
+                ids,
+            ).fetchall()
+        tasks_by_paper: dict[str, dict] = {}
+        for r in task_rows:
+            tasks_by_paper.setdefault(r["paper_id"], {})[r["task_type"]] = r["status"]
+        items = []
+        for p in papers:
+            p["tasks"] = tasks_by_paper.get(p["id"], {})
+            items.append(p)
+        return {"total": len(items), "items": items}
+
     @app.post("/api/queue")
     def queue(body: QueueBody, res=Depends(resources)):
         _, _, conn = res
@@ -205,7 +265,18 @@ def create_app(config_path: str | None = None) -> FastAPI:
         return {"queued": queued}
 
     @app.post("/api/upload")
-    async def upload(file: UploadFile = File(...), paper_id: str = "", title: str = "", res=Depends(resources)):
+    async def upload(
+        file: UploadFile = File(...),
+        paper_id: str = Form(""),
+        title: str = Form(""),
+        doi: str = Form(""),
+        year: str = Form(""),
+        venue: str = Form(""),
+        authors: str = Form(""),
+        tags: str = Form(""),
+        issn: str = Form(""),
+        res=Depends(resources),
+    ):
         config, paths, conn = res
         if not (file.filename or "").lower().endswith(".pdf"):
             raise HTTPException(400, "only PDF files are accepted")
@@ -215,10 +286,20 @@ def create_app(config_path: str | None = None) -> FastAPI:
         try:
             from paperbase.pipeline.pdf import ingest_uploaded_pdf
 
+            def split_csv(value: str) -> list[str]:
+                return [v.strip() for v in value.replace("；", ",").replace(";", ",").split(",") if v.strip()]
+
+            year_int = int(year) if str(year).strip().isdigit() else None
             paper = ingest_uploaded_pdf(
                 conn, paths, config, tmp,
-                paper_id=paper_id or None,
-                title=title or None,
+                paper_id=paper_id.strip() or None,
+                title=title.strip() or None,
+                doi=doi.strip() or None,
+                year=year_int,
+                venue=venue.strip() or None,
+                authors=split_csv(authors) or None,
+                tags=split_csv(tags) or None,
+                issn=issn.strip() or None,
             )
         finally:
             shutil.rmtree(tmp.parent, ignore_errors=True)
@@ -319,6 +400,10 @@ def create_app(config_path: str | None = None) -> FastAPI:
         paper = get_paper(conn, paper_id)
         if not paper:
             raise HTTPException(404, "paper not found")
+        if paper.get("status") in ("new", "in_queue", "later"):
+            update_paper_status(conn, paper_id, "reading")
+            paper = get_paper(conn, paper_id)
+
         path_value = paper.get("md_zh_path") if lang == "zh" else paper.get("md_path")
         if not path_value or not Path(path_value).exists():
             raise HTTPException(404, "markdown not available")
@@ -337,9 +422,12 @@ def create_app(config_path: str | None = None) -> FastAPI:
                 f"body{{font-family:monospace;max-width:1000px;margin:auto;padding:1rem;font-size:14px}}"
                 f"pre{{white-space:pre-wrap;overflow-x:auto}}span{{display:block;min-height:1.1em}}"
                 f"span:target{{background:#fef08a}}"
+                f".status-pill{{display:inline-block;background:#eef2ff;color:#3730a3;border-radius:99px;padding:.2rem .7rem;font-size:.85rem;margin:.3rem .5rem .3rem 0}}"
+                f".status-btn{{border:1px solid #2563eb;background:#2563eb;color:#fff;border-radius:8px;padding:.35rem .7rem;font-size:.9rem;margin-right:.4rem;cursor:pointer}}"
+                f".status-btn.ghost{{background:#fff;color:#2563eb}}"
                 f"@media(max-width:640px){{body{{padding:.5rem;font-size:12px}}}}"
                 f"</style></head><body><p><a href='/'>← 返回</a> | <a href='?raw=0&lang={lang}'>渲染版</a></p>"
-                f"<h1>{html_mod.escape(paper['title'])}</h1><pre>{body}</pre></body></html>"
+                f"<h1>{html_mod.escape(paper['title'])}</h1><p>{_status_widget(paper)}</p><pre>{body}</pre></body></html>"
             )
         body_html = md.markdown(text, extensions=["tables", "fenced_code"])
         paper_id_json = json.dumps(paper["id"], ensure_ascii=False)
@@ -397,6 +485,9 @@ def create_app(config_path: str | None = None) -> FastAPI:
             f"pre{{white-space:pre-wrap;overflow-x:auto}}table{{border-collapse:collapse;display:block;overflow-x:auto}}td,th{{border:1px solid #ccc;padding:.3rem}}"
             f"img{{max-width:100%}}"
             f".ask-panel{{border:1px solid #c7d2fe;border-radius:12px;padding:.6rem .8rem;background:#f8faff;margin:0 0 1rem}}"
+            f".status-pill{{display:inline-block;background:#eef2ff;color:#3730a3;border-radius:99px;padding:.2rem .7rem;font-size:.85rem;margin:.3rem .5rem .3rem 0}}"
+            f".status-btn{{border:1px solid #2563eb;background:#2563eb;color:#fff;border-radius:8px;padding:.35rem .7rem;font-size:.9rem;margin-right:.4rem;cursor:pointer}}"
+            f".status-btn.ghost{{background:#fff;color:#2563eb}}"
             f".ask-panel summary{{font-weight:700;font-size:1rem;cursor:pointer;min-height:44px;display:flex;align-items:center}}"
             f".ask-panel textarea{{width:100%;font-size:16px;padding:.6rem;border:1px solid #cbd5e1;border-radius:8px;margin:.5rem 0}}"
             f".ask-panel .ask-btn{{background:#2563eb;color:#fff;border:0;padding:.6rem 1rem;border-radius:8px;font-size:16px;min-height:44px}}"
@@ -404,7 +495,7 @@ def create_app(config_path: str | None = None) -> FastAPI:
             f".cites a{{display:inline-block;color:#2563eb;text-decoration:none;margin:.15rem .4rem .15rem 0;font-size:.85rem}}"
             f"@media(max-width:640px){{body{{padding:.5rem;font-size:15px}}h1{{font-size:1.3rem}}td,th{{padding:.25rem;font-size:.8rem}}.ask-panel{{padding:.5rem}}}}"
             f"</style></head><body><p><a href='/'>← 返回</a> | <a href='?lang=zh'>中文</a> | <a href='?lang=en'>English</a> | <a href='?raw=1'>原文行号</a></p>"
-            f"<h1>{html_mod.escape(paper['title'])}</h1>{ask_panel}{body_html}</body></html>"
+            f"<h1>{html_mod.escape(paper['title'])}</h1><p>{_status_widget(paper)}</p>{ask_panel}{body_html}</body></html>"
         )
 
     return app

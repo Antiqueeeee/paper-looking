@@ -119,6 +119,87 @@ def download_pdf(conn, paper: dict, paths: PaperPaths, config: dict, store=None)
     return dest
 
 
+def _split_csv(value: str | None) -> list[str]:
+    return [v.strip() for v in (value or "").replace("；", ",").replace(";", ",").split(",") if v.strip()]
+
+
+def upsert_manual_paper(
+    conn,
+    paper_id: str,
+    title: str,
+    *,
+    doi: str = "",
+    year: int | None = None,
+    venue: str = "manual",
+    authors: list[str] | None = None,
+    tags: list[str] | None = None,
+    issn: str = "",
+) -> dict:
+    extra: dict = {}
+    if issn:
+        extra["issn"] = issn
+    upsert_paper(conn, {
+        "id": paper_id,
+        "source": "manual",
+        "title": title,
+        "authors": authors or [],
+        "abstract": "",
+        "year": year,
+        "venue": venue or "manual",
+        "url": f"https://doi.org/{doi}" if doi else "",
+        "pdf_url": "",
+        "doi": doi,
+        "tags": tags or [],
+        "extra": extra,
+    })
+    paper = get_paper(conn, paper_id)
+    if issn:
+        conn.execute(
+            "UPDATE papers SET extra=? WHERE id=?",
+            (__import__("json").dumps({**paper.get("extra", {}), "issn": issn}, ensure_ascii=False), paper_id),
+        )
+        conn.commit()
+    return get_paper(conn, paper_id)
+
+
+def update_manual_metadata(
+    conn,
+    paper_id: str,
+    *,
+    title: str | None = None,
+    doi: str = "",
+    year: int | None = None,
+    venue: str = "",
+    authors: list[str] | None = None,
+    tags: list[str] | None = None,
+    issn: str = "",
+) -> None:
+    paper = get_paper(conn, paper_id)
+    if paper is None:
+        return
+    extra = dict(paper.get("extra") or {})
+    if issn:
+        extra["issn"] = issn
+    upsert_paper(conn, {
+        "id": paper_id,
+        "source": paper["source"],
+        "title": title or paper["title"],
+        "authors": authors if authors is not None else paper["authors"],
+        "abstract": paper["abstract"],
+        "year": year if year is not None else paper["year"],
+        "venue": venue or paper["venue"],
+        "url": paper["url"] or (f"https://doi.org/{doi}" if doi else ""),
+        "pdf_url": paper["pdf_url"],
+        "doi": doi or paper["doi"],
+        "tags": tags if tags is not None else paper["tags"],
+    })
+    conn.execute(
+        "UPDATE papers SET extra=? WHERE id=?",
+        (__import__("json").dumps(extra, ensure_ascii=False), paper_id),
+    )
+    conn.commit()
+
+
 def ingest_uploaded_pdf(
     conn,
     paths: PaperPaths,
@@ -127,11 +208,18 @@ def ingest_uploaded_pdf(
     *,
     paper_id: str | None = None,
     title: str | None = None,
+    doi: str | None = None,
+    year: int | None = None,
+    venue: str | None = None,
+    authors: list[str] | None = None,
+    tags: list[str] | None = None,
+    issn: str | None = None,
 ) -> dict:
     """Validate, deduplicate and ingest a manually uploaded PDF.
 
-    Returns the canonical paper dict. Creates a manual record when no paper
-    id is supplied and no title match is found.
+    Metadata fields (title/doi/year/venue/authors/tags/issn) are optional but
+    strongly recommended; they are used for matching and stored on the paper.
+    Returns the canonical paper dict.
     """
     src = Path(file_path)
     if not src.exists():
@@ -146,9 +234,12 @@ def ingest_uploaded_pdf(
         raise ValueError(f"invalid PDF: {reason}")
 
     digest = file_sha256(src)
+    doi = (doi or "").strip().lower().replace("https://doi.org/", "").replace("http://doi.org/", "")
     paper = None
     if paper_id:
         paper = get_paper(conn, str(paper_id))
+    if paper is None and doi:
+        paper = get_paper(conn, doi)
     if paper is None and title:
         paper = find_paper_by_title(conn, title)
     if paper is None:
@@ -156,20 +247,23 @@ def ingest_uploaded_pdf(
         paper_id = f"manual:{digest[:16]}"
         paper = get_paper(conn, paper_id)
         if paper is None:
-            upsert_paper(conn, {
-                "id": paper_id,
-                "source": "manual",
-                "title": title or Path(src).stem,
-                "authors": [],
-                "abstract": "",
-                "year": None,
-                "venue": "manual",
-                "url": "",
-                "pdf_url": "",
-                "doi": "",
-                "tags": [],
-            })
-            paper = get_paper(conn, paper_id)
+            paper = upsert_manual_paper(
+                conn, paper_id, title or Path(src).stem,
+                doi=doi, year=year, venue=venue, authors=authors, tags=tags, issn=issn,
+            )
+    elif any((doi, title, year, venue, authors, tags, issn)):
+        # Refresh metadata supplied by the user on an existing record.
+        update_manual_metadata(
+            conn, paper["id"],
+            title=title or paper.get("title"),
+            doi=doi or paper.get("doi"),
+            year=year if year is not None else paper.get("year"),
+            venue=venue or paper.get("venue"),
+            authors=authors or paper.get("authors"),
+            tags=tags if tags is not None else paper.get("tags"),
+            issn=issn or (paper.get("extra") or {}).get("issn"),
+        )
+        paper = get_paper(conn, paper["id"])
 
     # Duplicate content returns the existing canonical record without copying.
     if paper.get("pdf_sha256") == digest:

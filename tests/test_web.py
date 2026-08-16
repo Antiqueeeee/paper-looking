@@ -76,6 +76,13 @@ def test_queue_and_ask_without_parsed(client):
     r = client.post("/api/queue", json={"ids": ["2026.acl-long.1"]})
     assert r.status_code == 200
     assert r.json()["queued"] == 1
+
+    r = client.get("/api/queue")
+    assert r.status_code == 200
+    assert r.json()["total"] == 1
+    assert r.json()["items"][0]["id"] == "2026.acl-long.1"
+    assert "download_pdf" in r.json()["items"][0]["tasks"]
+
     # No parsed markdown: answer should be honest and must not require LLM key.
     r = client.post("/api/ask", json={"question": "方法是什么？", "mode": "paper", "paper_ids": ["2026.acl-long.1"]})
     assert r.status_code == 200
@@ -89,11 +96,26 @@ def test_upload_and_reader_flow(client, tmp_path):
     r = client.post(
         "/api/upload",
         files={"file": ("x.pdf", open(pdf, "rb"), "application/pdf")},
-        data={"title": "Manual Paper"},
+        data={
+            "title": "Manual Paper",
+            "doi": "10.1000/manual.1",
+            "venue": "Test Journal",
+            "issn": "1234-5678",
+            "year": "2026",
+            "authors": "Alice, Bob",
+            "tags": "rag,kbqa",
+        },
     )
     assert r.status_code == 200
-    paper_id = r.json()["id"]
+    body = r.json()
+    paper_id = body["id"]
     assert paper_id.startswith("manual:")
+    assert body["doi"] == "10.1000/manual.1"
+    assert body["venue"] == "Test Journal"
+    assert body["year"] == 2026
+    assert body["authors"] == ["Alice", "Bob"]
+    assert body["tags"] == ["rag", "kbqa"]
+    assert body["extra"]["issn"] == "1234-5678"
     # Reader should 404 before parsing, not 500.
     r = client.get(f"/reader/{paper_id}")
     assert r.status_code == 404
@@ -119,3 +141,10 @@ def test_upload_and_reader_flow(client, tmp_path):
     assert r.status_code == 200
     assert "问这篇论文" in r.text
     assert f"PAPER_ID = \"{paper_id}\"" in r.text
+    assert "标记已读" in r.text
+    # Opening the reader automatically marks the paper as reading.
+    r = client.get(f"/api/papers/{paper_id}")
+    assert r.json()["status"] == "reading"
+    # Mark as done via the same endpoint the page uses.
+    r = client.patch(f"/api/papers/{paper_id}", json={"status": "done"})
+    assert r.json()["status"] == "done"

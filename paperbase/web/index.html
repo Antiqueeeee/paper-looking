@@ -13,7 +13,7 @@ html{font-size:16px}
 body{margin:0;font-family:system-ui,-apple-system,"Segoe UI",Roboto,"PingFang SC","Microsoft YaHei",sans-serif;background:var(--bg);color:var(--text);line-height:1.55;padding-bottom:env(safe-area-inset-bottom)}
 header{position:sticky;top:0;z-index:10;background:#0f172a;color:#fff;padding:.55rem .75rem;padding-top:calc(.55rem + env(safe-area-inset-top))}
 header h1{font-size:1rem;margin:0 0 .45rem;font-weight:700}
-nav{display:grid;grid-template-columns:repeat(4,1fr);gap:.35rem}
+nav{display:grid;grid-template-columns:repeat(5,1fr);gap:.35rem}
 nav button{background:#1e293b;color:#cbd5e1;border:1px solid #334155;padding:.55rem .1rem;border-radius:10px;cursor:pointer;font-size:.82rem;min-height:44px;white-space:nowrap}
 nav button.active,nav button:hover{background:var(--primary);color:#fff;border-color:var(--primary)}
 main{max-width:1100px;margin:0 auto;padding:.75rem}
@@ -60,6 +60,7 @@ table{border-collapse:collapse;width:100%;min-width:480px}td,th{border:1px solid
   <nav>
     <button class="active" onclick="show('digest')">今日早报</button>
     <button onclick="show('papers')">论文库</button>
+    <button onclick="show('queue')">阅读队列</button>
     <button onclick="show('upload')">上传</button>
     <button onclick="show('stats')">统计</button>
   </nav>
@@ -89,12 +90,26 @@ table{border-collapse:collapse;width:100%;min-width:480px}td,th{border:1px solid
     </div>
   </section>
 
+  <section id="queue" class="view">
+    <div class="card">
+      <div class="row"><h2 style="margin:0;flex:1">阅读队列</h2><button class="btn" onclick="loadQueue()">刷新进度</button></div>
+      <p class="hint">这里显示你点过“想读”的论文。系统会自动下载、解析、翻译；完成后可直接阅读和提问。</p>
+      <div id="queueList"></div>
+    </div>
+  </section>
+
   <section id="upload" class="view">
     <div class="card">
       <h2>上传 PDF</h2>
       <input type="file" id="pdfFile" accept="application/pdf"><br><br>
-      <input id="uploadPaperId" placeholder="已有论文 ID（可选，留空自动匹配/新建）">
-      <input id="uploadTitle" placeholder="论文标题（新建记录时使用，可选）"><br><br>
+      <input id="uploadTitle" placeholder="论文标题（推荐）">
+      <input id="uploadDoi" placeholder="DOI，例如 10.1145/xxxxxxx（可选）">
+      <input id="uploadVenue" placeholder="期刊 / 会议名称（可选）">
+      <input id="uploadIssn" placeholder="ISSN（可选）">
+      <input id="uploadYear" placeholder="年份，例如 2026（可选）">
+      <input id="uploadAuthors" placeholder="作者，多个用逗号分隔（可选）">
+      <input id="uploadTags" placeholder="标签，多个用逗号分隔，例如 rag,kbqa（可选）">
+      <input id="uploadPaperId" placeholder="已有论文 ID（通常留空，系统按 DOI/标题自动匹配）"><br><br>
       <button class="btn" onclick="uploadPdf()">上传并加入解析队列</button>
       <pre id="uploadResult" class="light" style="display:none"></pre>
     </div>
@@ -110,10 +125,11 @@ const $=id=>document.getElementById(id);
 function show(name){
   document.querySelectorAll('.view').forEach(v=>v.classList.remove('active'));
   document.querySelectorAll('nav button').forEach((b,i)=>b.classList.toggle('active', b.textContent.trim()===({
-    digest:'今日早报',papers:'论文库',upload:'上传',stats:'统计'}[name])));
+    digest:'今日早报',papers:'论文库',queue:'阅读队列',upload:'上传',stats:'统计'}[name])));
   $(name).classList.add('active');
   if(name==='digest')loadDigest();
   if(name==='papers'){loadFacets();searchPapers();}
+  if(name==='queue')loadQueue();
   if(name==='stats')loadStats();
 }
 function toast(m){const t=$('toast');t.textContent=m;t.style.display='block';setTimeout(()=>t.style.display='none',2600)}
@@ -159,13 +175,55 @@ async function searchPapers(){
       </div>`}).join('') || '<p class="muted">没有结果</p>';
   }catch(e){toast('搜索失败：'+e.message)}
 }
-async function queueOne(id){try{const d=await j('/api/queue',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({ids:[id]})});toast('已加入队列')}catch(e){toast(e.message)}}
+async function queueOne(id){
+  try{
+    const d=await j('/api/queue',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({ids:[id]})});
+    toast('已加入阅读队列');
+    setTimeout(()=>show('queue'),500);
+  }catch(e){toast(e.message)}
+}
 async function uploadPdf(){
   const f=$('pdfFile').files[0];if(!f){toast('请选择 PDF');return}
   const fd=new FormData();fd.append('file',f);
   if($('uploadPaperId').value.trim())fd.append('paper_id',$('uploadPaperId').value.trim());
   if($('uploadTitle').value.trim())fd.append('title',$('uploadTitle').value.trim());
+  if($('uploadDoi').value.trim())fd.append('doi',$('uploadDoi').value.trim());
+  if($('uploadVenue').value.trim())fd.append('venue',$('uploadVenue').value.trim());
+  if($('uploadIssn').value.trim())fd.append('issn',$('uploadIssn').value.trim());
+  if($('uploadYear').value.trim())fd.append('year',$('uploadYear').value.trim());
+  if($('uploadAuthors').value.trim())fd.append('authors',$('uploadAuthors').value.trim());
+  if($('uploadTags').value.trim())fd.append('tags',$('uploadTags').value.trim());
   try{const d=await j('/api/upload',{method:'POST',body:fd});$('uploadResult').style.display='block';$('uploadResult').textContent=JSON.stringify(d,null,2);toast('上传成功：'+d.id)}catch(e){toast('上传失败：'+e.message)}
+}
+const TASK_LABELS={'download_pdf':'下载PDF','parse_pdf':'解析PDF','translate_full':'全文翻译','translate_meta':'摘要翻译'};
+const TASK_STATE={'queued':'排队中','running':'处理中','done':'已完成','failed':'失败'};
+function progressOf(p){
+  const rows=[];
+  for(const [task,label] of Object.entries(TASK_LABELS)){
+    const st=p.tasks[task]||'-';
+    rows.push(`${label}:${st==='-'?'未开始':(TASK_STATE[st]||st)}`);
+  }
+  return rows.join(' · ');
+}
+async function loadQueue(){
+  try{
+    const d=await j('/api/queue');
+    $('queueList').innerHTML=d.items.map(p=>{
+      const zh=p.title_zh||'';
+      const readable=p.parse_status==='done';
+      return `
+      <div class="paper">
+        <h3>${esc(zh||p.title)}</h3>
+        ${zh?`<div class="zh">${esc(p.title)}</div>`:''}
+        <div class="meta">[${p.year||'?'}] ${esc(p.venue||'-')} · ${esc(label(p.source,SOURCE_LABELS))}</div>
+        <div class="meta">进度：${esc(progressOf(p))}</div>
+        <div class="badges"><span class="st">${esc(label(p.status,STATUS_LABELS))}</span></div>
+        <div class="actions">
+          ${readable?`<a href="/reader/${encodeURIComponent(p.id)}?ask=1#ask"><button class="btn">阅读 &amp; 提问</button></a>`:`<button class="btn" disabled>等待解析</button>`}
+          ${p.pdf_status==='needs_upload'?`<button class="ghost" onclick="show('upload')">去上传 PDF</button>`:''}
+        </div>
+      </div>`}).join('') || '<p class="muted">阅读队列是空的。去论文库点“想读：自动解析+翻译”。</p>';
+  }catch(e){$('queueList').innerHTML='加载失败：'+esc(e.message)}
 }
 async function loadStats(){
   try{const d=await j('/api/stats');const rows=o=>Object.entries(o||{}).map(([k,v])=>`<tr><td>${esc(k)}</td><td>${v}</td></tr>`).join('');
