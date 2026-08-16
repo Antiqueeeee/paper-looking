@@ -122,13 +122,9 @@ async function searchPapers(){
     $('paperList').innerHTML=d.items.map(x=>{
       const zh=x.title_zh||'';
       const parsed=x.parse_status==='done';
-      const translated=x.translate_status==='done' && x.md_zh_path;
       let actions='';
       if(parsed){
-        actions=`<a href="/reader/${encodeURIComponent(x.id)}?ask=1#ask"><button class="btn">英文阅读 + 提问</button></a>`;
-        actions+= translated
-          ? `<a href="/reader/${encodeURIComponent(x.id)}?lang=zh"><button class="ghost">中文阅读</button></a>`
-          : `<button class="ghost" disabled>中文待翻译</button>`;
+        actions=`<a href="/reader/${encodeURIComponent(x.id)}?ask=1#ask"><button class="btn">阅读 + 提问</button></a>`;
       }else{
         actions=`<button class="btn" onclick="queueOne('${esc(x.id)}')">想读：自动解析+翻译</button>`;
         if(x.pdf_status==='needs_upload') actions+=`<button class="ghost" onclick="show('upload')">去上传 PDF</button>`;

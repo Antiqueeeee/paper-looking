@@ -43,7 +43,7 @@ def test_index_and_digest_pages(client):
     assert "全部标签" in r.text
     assert "全部年份" in r.text
     assert "全部来源" in r.text
-    assert "英文阅读 + 提问" in r.text
+    assert "阅读 + 提问" in r.text
     assert "想读：自动解析+翻译" in r.text
     r = client.get("/static/style.css")
     assert r.status_code == 200
