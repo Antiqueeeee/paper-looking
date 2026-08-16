@@ -9,6 +9,9 @@ from paperbase.config import load_config
 from paperbase.db import init_db, utcnow
 from paperbase.paths import PaperPaths
 from paperbase.pipeline.digest import build_daily_digest, queue_papers
+from paperbase.pipeline.handlers import process_task
+from paperbase.pipeline.pdf import ingest_uploaded_pdf
+from paperbase.tasks import claim_next_task
 from paperbase.sources import fetch_source
 from paperbase.sources.import_legacy import import_legacy
 
@@ -113,7 +116,49 @@ def build_parser() -> argparse.ArgumentParser:
     p_queue.add_argument("ids", nargs="+", help="paper ids")
     p_queue.add_argument("--remove", action="store_true", help="remove from queue")
     p_queue.set_defaults(func=cmd_queue)
+
+    p_upload = sub.add_parser("upload", help="manually upload one or more PDFs")
+    p_upload.add_argument("files", nargs="+")
+    p_upload.add_argument("--paper-id", help="attach to an existing paper")
+    p_upload.add_argument("--title", help="title for a new manual record")
+    p_upload.set_defaults(func=cmd_upload)
+
+    p_worker = sub.add_parser("worker", help="run queued pipeline tasks")
+    p_worker.add_argument("--once", action="store_true", help="claim and run one task, then exit")
+    p_worker.add_argument("--max", type=int, default=1, dest="max_tasks")
+    p_worker.add_argument("--task-type", choices=["download_pdf", "parse_pdf", "translate_full"])
+    p_worker.set_defaults(func=cmd_worker)
     return parser
+
+
+def cmd_upload(args) -> int:
+    config, paths, conn = _open_db(args)
+    for file_path in args.files:
+        paper = ingest_uploaded_pdf(
+            conn, paths, config,
+            file_path,
+            paper_id=args.paper_id,
+            title=args.title,
+        )
+        print(f"uploaded: {file_path} -> {paper['id']} ({paper['title']})")
+    return 0
+
+
+def cmd_worker(args) -> int:
+    config, paths, conn = _open_db(args)
+    done = 0
+    limit = max(1, int(args.max_tasks)) if not args.once else 1
+    while done < limit:
+        claimed = claim_next_task(conn, task_type=args.task_type, limit=1)
+        if not claimed:
+            print("no pending tasks")
+            break
+        task = claimed[0]
+        print(f"running task {task['id']} {task['task_type']} for {task['paper_id']}")
+        process_task(conn, config, paths, task)
+        done += 1
+    print(f"processed {done} task(s)")
+    return 0
 
 
 def main(argv: list[str] | None = None) -> int:

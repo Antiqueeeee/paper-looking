@@ -13,7 +13,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Iterable, Mapping
 
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
 
 SCHEMA_V1 = """
 CREATE TABLE IF NOT EXISTS meta (
@@ -127,6 +127,10 @@ CREATE TABLE IF NOT EXISTS translation_cache (
 );
 """
 
+SCHEMA_V3 = """
+ALTER TABLE papers ADD COLUMN pdf_sha256 TEXT NOT NULL DEFAULT '';
+"""
+
 
 def utcnow() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="seconds")
@@ -152,6 +156,15 @@ def migrate(conn: sqlite3.Connection) -> int:
     if version < 2:
         conn.executescript(SCHEMA_V2)
         version = 2
+    if version < 3:
+        try:
+            conn.executescript(SCHEMA_V3)
+        except Exception:
+            # Fresh databases created by SCHEMA_V1 do not have the column yet;
+            # future base schema should include it. Ignore only the duplicate
+            # column error.
+            pass
+        version = 3
     if version:
         conn.execute(f"PRAGMA user_version={version}")
     conn.commit()
@@ -332,6 +345,7 @@ def set_local_file(
     md_path: str | None = None,
     md_zh_path: str | None = None,
     object_key: str | None = None,
+    pdf_sha256: str | None = None,
 ) -> None:
     """Update local file fields. `None` means 'keep the existing value'."""
     fields = {
@@ -339,6 +353,7 @@ def set_local_file(
         "md_path": md_path,
         "md_zh_path": md_zh_path,
         "object_key": object_key,
+        "pdf_sha256": pdf_sha256,
     }
     sets = [f"{col}=?" for col, val in fields.items() if val is not None]
     if not sets:

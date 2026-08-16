@@ -165,17 +165,27 @@ def render_digest(papers: list[dict], result: DigestResult | None = None) -> str
 
 
 def queue_papers(conn, paper_ids: Iterable[str]) -> int:
-    """Mark papers as in_queue. Returns changed count."""
+    """Mark papers as in_queue and create the first PDF pipeline tasks."""
     ids = [str(i) for i in paper_ids if str(i).strip()]
     if not ids:
         return 0
     placeholders = ",".join("?" for _ in ids)
-    cur = conn.execute(
+    conn.execute(
         f"UPDATE papers SET status='in_queue', updated_at=? WHERE id IN ({placeholders})",
         (utcnow(), *ids),
     )
     conn.commit()
-    return cur.rowcount
+
+    from paperbase.db import get_paper
+    from paperbase.pipeline.pdf import create_pdf_pipeline_tasks
+
+    queued = 0
+    for pid in ids:
+        paper = get_paper(conn, pid)
+        if paper and paper["status"] == "in_queue":
+            create_pdf_pipeline_tasks(conn, paper)
+            queued += 1
+    return queued
 
 
 __all__ = [

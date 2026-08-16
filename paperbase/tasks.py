@@ -167,6 +167,15 @@ def fail_task(conn: sqlite3.Connection, task_id: int, error: str) -> None:
     conn.commit()
 
 
+def release_task(conn: sqlite3.Connection, task_id: int, error: str = "") -> None:
+    """Return a claimed task to queued without consuming a retry attempt."""
+    conn.execute(
+        "UPDATE tasks SET status='queued', started_at=NULL, last_error=? WHERE id=?",
+        (error[:2000], task_id),
+    )
+    conn.commit()
+
+
 def cancel_task(conn: sqlite3.Connection, task_id: int) -> None:
     conn.execute("UPDATE tasks SET status='cancelled', finished_at=? WHERE id=?", (utcnow(), task_id))
     conn.commit()
@@ -197,6 +206,7 @@ __all__ = [
     "task_to_dict",
     "finish_task",
     "fail_task",
+    "release_task",
     "cancel_task",
     "pending_count",
     "reset_running_tasks",
