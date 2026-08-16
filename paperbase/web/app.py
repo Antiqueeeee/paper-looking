@@ -28,7 +28,7 @@ from paperbase.db import (
     set_user_tags,
     update_paper_status,
 )
-from paperbase.paths import PaperPaths
+from paperbase.paths import PaperPaths, safe_component
 
 _drain_lock = threading.Lock()
 
@@ -79,8 +79,8 @@ def _pdf_panel(paper_id: str, paper: dict) -> str:
     return f"""
     <details id="pdf-panel" class="ask-panel">
       <summary>📄 查看原 PDF</summary>
-      <iframe class="pdf-frame" src="/reader/{paper_id}/pdf" title="原 PDF"></iframe>
-      <p class="hint">如果手机浏览器不支持内嵌预览，请点 <a href="/reader/{paper_id}/pdf" target="_blank">在新窗口打开 PDF</a>。</p>
+      <p class="hint">原 PDF 已转换为图片在线预览，不会触发下载。</p>
+      <a class="btn" href="/reader/{paper_id}/pdf-preview" target="_blank">打开原 PDF 预览</a>
     </details>
     <script>
     if (new URLSearchParams(location.search).get('pdf') === '1') {{
@@ -504,7 +504,7 @@ def create_app(config_path: str | None = None) -> FastAPI:
                 f"<title>{html_mod.escape(paper['title'])}</title><link rel='stylesheet' href='/static/style.css'></head><body>"
                 "<header class='topbar one-line'><div class='brand'><a href='/'>📚 PaperBase</a></div>"
                 f"<div class='nav-links'><a class='btn ghost' href='/'>返回</a><a class='btn ghost' href='?raw=0&lang={lang}'>渲染版</a>"
-                + (f"<a class='btn ghost' href='?pdf=1#pdf-panel'>原 PDF</a>" if _has_pdf(paper) else "")
+                + (f"<a class='btn ghost' href='/reader/{paper_id}/pdf-preview' target='_blank'>原 PDF</a>" if _has_pdf(paper) else "")
                 + "</div></header>"
                 f"<main class='container'><div class='card'><h1>{html_mod.escape(paper['title'])}</h1>"
                 f"<p>{_status_widget(paper)}</p>{_pdf_panel(paper_id, paper)}<pre class='reader-raw'>{body}</pre></div></main></body></html>"
@@ -568,12 +568,62 @@ def create_app(config_path: str | None = None) -> FastAPI:
             f"<a class='btn ghost' href='?lang=en'>English</a>"
             f"<a class='btn ghost' href='?lang=zh'>中文</a>"
             f"<a class='btn ghost' href='?raw=1'>原文行号</a>"
-            + (f"<a class='btn ghost' href='?pdf=1#pdf-panel'>原 PDF</a>" if _has_pdf(paper) else "")
+            + (f"<a class='btn ghost' href='/reader/{paper_id}/pdf-preview' target='_blank'>原 PDF</a>" if _has_pdf(paper) else "")
             + "</div></header>"
             f"<main class='container'><div class='card'><h1>{html_mod.escape(paper['title'])}</h1>"
             f"<p>{_status_widget(paper)}</p>{_pdf_panel(paper_id, paper)}{ask_panel}<div class='reader-body'>{body_html}</div></div></main>"
             "</body></html>"
         )
+
+    @app.get("/reader/{paper_id}/pdf-preview", response_class=HTMLResponse)
+    def pdf_preview(paper_id: str, res=Depends(resources)):
+        config, paths, conn = res
+        paper = get_paper(conn, paper_id)
+        if not paper:
+            raise HTTPException(404, "paper not found")
+        local = Path(paper.get("local_pdf") or "")
+        if not local.is_file() and paper.get("object_key"):
+            from paperbase.pipeline.storage_manager import get_object_store, restore_cold_pdf
+
+            local = restore_cold_pdf(conn, paths, get_object_store(config, paths), paper_id) or local
+        if not local.is_file():
+            raise HTTPException(404, "PDF not available")
+        from paperbase.pipeline.pdf_preview import ensure_preview_images
+
+        preview_dir = paths.root / "previews" / safe_component(paper_id)
+        pages = ensure_preview_images(local, preview_dir)
+        imgs = "\n".join(
+            f"<div class='card'><img class='pdf-page' src='/reader/{paper_id}/pdf-pages/{p.name}' alt='page {p.name}'></div>"
+            for p in pages
+        )
+        return (
+            "<html><head><meta charset='utf-8'>"
+            "<meta name='viewport' content='width=device-width, initial-scale=1, viewport-fit=cover'>"
+            f"<title>原 PDF · {html_mod.escape(paper['title'])}</title><link rel='stylesheet' href='/static/style.css'>"
+            "<style>.pdf-page{width:100%;height:auto;display:block;border:1px solid var(--border);border-radius:8px}</style>"
+            "</head><body>"
+            "<header class='topbar one-line'><div class='brand'><a href='/'>📚 PaperBase</a></div>"
+            f"<div class='nav-links'><a class='btn ghost' href='/reader/{paper_id}'>← 返回阅读</a></div></header>"
+            f"<main class='container'><h1>{html_mod.escape(paper['title'])}</h1>"
+            f"<p class='hint'>共 {len(pages)} 页，图片版预览不会触发下载。</p>{imgs}</main></body></html>"
+        )
+
+    @app.get("/reader/{paper_id}/pdf-pages/{page_name}")
+    def pdf_preview_page(paper_id: str, page_name: str, res=Depends(resources)):
+        _, paths, conn = res
+        paper = get_paper(conn, paper_id)
+        if not paper:
+            raise HTTPException(404, "paper not found")
+        if not page_name.startswith("page-") or not page_name.endswith(".jpg"):
+            raise HTTPException(400, "illegal page name")
+        target = (paths.root / "previews" / safe_component(paper_id) / page_name).resolve()
+        try:
+            target.relative_to((paths.root / "previews" / safe_component(paper_id)).resolve())
+        except ValueError as exc:
+            raise HTTPException(400, "illegal page path") from exc
+        if not target.is_file():
+            raise HTTPException(404, "preview page not generated")
+        return FileResponse(target, media_type="image/jpeg")
 
     @app.get("/reader/{paper_id}/assets/{asset_path:path}")
     def reader_asset(paper_id: str, asset_path: str, res=Depends(resources)):
