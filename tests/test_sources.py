@@ -5,7 +5,7 @@ import json
 
 import pytest
 
-from paperbase.db import count_papers, get_paper, init_db
+from paperbase.db import count_papers, get_paper, init_db, upsert_paper
 from paperbase.models import PaperDraft
 from paperbase.sources.acl import parse_volume_papers
 from paperbase.sources.arxiv import parse_arxiv_atom
@@ -142,6 +142,42 @@ def test_fetch_source_orchestration(tmp_path, conn, monkeypatch):
     assert row["new_count"] == 1
     raw = conn.execute("SELECT value FROM meta WHERE key='source_state:fake'").fetchone()
     assert "last_success_at" in raw["value"]
+
+
+def test_legacy_title_translation_import(tmp_path, conn):
+    import json as _json
+    from paperbase.sources.import_title_translations import (
+        import_title_translations,
+        load_legacy_translations,
+    )
+
+    legacy = tmp_path / "legacy"
+    (legacy / "titles_zh").mkdir(parents=True)
+    (legacy / "titles_zh" / "zh_0.jsonl").write_text(
+        "\n".join([
+            _json.dumps({"id": "2026.acl-long.1", "zh": "知识图谱论文"}),
+            _json.dumps({"id": "2026.acl-long.2", "zh": "信息抽取论文"}),
+        ]), encoding="utf-8"
+    )
+    (legacy / "interest_titles_2025_2026.txt").write_text(
+        "[2026] [KBS] GraphRAG for KBQA / 面向KBQA的GraphRAG (10.1016/J.KNOSYS.2026.1)  [RAG]\n",
+        encoding="utf-8"
+    )
+
+    pairs = load_legacy_translations(legacy)
+    assert pairs["2026.acl-long.1"] == "知识图谱论文"
+    assert pairs["10.1016/j.knosys.2026.1"] == "面向KBQA的GraphRAG"
+
+    # DB contains p1 (empty zh) and p3 (already translated); p2 missing.
+    upsert_paper(conn, {"id": "2026.acl-long.1", "source": "acl", "title": "T1"})
+    upsert_paper(conn, {"id": "2026.acl-long.3", "source": "acl", "title": "T3"})
+    conn.execute("UPDATE papers SET title_zh='已有翻译' WHERE id='2026.acl-long.3'")
+    conn.commit()
+    report = import_title_translations(conn, legacy)
+    assert report.updated == 1
+    assert get_paper(conn, "2026.acl-long.1")["title_zh"] == "知识图谱论文"
+    assert get_paper(conn, "2026.acl-long.3")["title_zh"] == "已有翻译"
+    assert report.skipped_missing_paper == 2  # acl-long.2 + journal DOI
 
 
 def test_acl_volume_cache_must_cover_all_requested_years(tmp_path, monkeypatch):

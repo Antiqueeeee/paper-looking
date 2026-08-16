@@ -14,6 +14,7 @@ from paperbase.pipeline.filter import apply_rules
 from paperbase.pipeline.pdf import ingest_uploaded_pdf
 from paperbase.sources import fetch_source
 from paperbase.sources.import_legacy import import_legacy
+from paperbase.sources.import_title_translations import import_title_translations
 
 
 def _open_db(args):
@@ -37,6 +38,11 @@ def cmd_init(args) -> int:
         print(f"first errors (see {error_log}):")
         for line in report.errors[:10]:
             print("  -", line)
+    title_report = import_title_translations(conn, legacy_dir)
+    print(
+        f"legacy title zh: found={title_report.found} updated={title_report.updated} "
+        f"existing={title_report.skipped_existing} missing={title_report.skipped_missing_paper}"
+    )
     if report.imported:
         changed = apply_rules(conn)
         print(f"interest rules applied: {changed} papers tagged")
