@@ -99,6 +99,31 @@ def test_queue_and_ask_without_parsed(client):
     assert "尚未解析" in r.json()["answer"]
 
 
+def test_qa_last_restore(client):
+    from paperbase.config import load_config
+    from paperbase.paths import PaperPaths as PP
+    from paperbase.db import init_db as init_db2
+
+    cfg = load_config(client.cfg_path)
+    paths = PP(cfg["paths"]["data_dir"])
+    conn = init_db2(paths.db_path)
+    import json as _json
+    conn.execute(
+        "INSERT INTO qa_logs(mode,question,paper_ids,answer,citations,confidence,tool_calls,model,created_at) "
+        "VALUES ('paper','q?',?,?,?,0.8,1,'mock','2026-01-01')",
+        (
+            _json.dumps(["2026.acl-long.1"]),
+            "the answer",
+            _json.dumps(["[x.md:1]"]),
+        ),
+    )
+    conn.commit(); conn.close()
+    r = client.get("/api/qa/last", params={"paper_id": "2026.acl-long.1"})
+    assert r.status_code == 200
+    assert r.json()["answer"] == "the answer"
+    assert r.json()["citations"] == ["[x.md:1]"]
+
+
 def test_upload_and_reader_flow(client, tmp_path):
     pdf = tmp_path / "x.pdf"
     pdf.write_bytes(b"%PDF-1.4\n" + b"x" * 300)

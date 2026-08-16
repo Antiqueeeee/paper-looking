@@ -440,6 +440,22 @@ def create_app(config_path: str | None = None) -> FastAPI:
         out["by_tag"] = dict(sorted(tags.items(), key=lambda kv: -kv[1]))
         return out
 
+    @app.get("/api/qa/last")
+    def qa_last(paper_id: str = "", res=Depends(resources)):
+        _, _, conn = res
+        if not paper_id:
+            return {}
+        row = conn.execute(
+            "SELECT * FROM qa_logs WHERE paper_ids LIKE ? ORDER BY id DESC LIMIT 1",
+            (f'%"{paper_id}"%',),
+        ).fetchone()
+        if not row:
+            return {}
+        d = dict(row)
+        d["citations"] = json.loads(d.get("citations") or "[]")
+        d["paper_ids"] = json.loads(d.get("paper_ids") or "[]")
+        return d
+
     @app.post("/api/ask")
     def ask(body: AskBody, res=Depends(resources)):
         config, paths, conn = res
@@ -499,6 +515,7 @@ def create_app(config_path: str | None = None) -> FastAPI:
           <summary>🤖 问这篇论文</summary>
           <textarea id="question" rows="3" placeholder="例如：这篇论文的核心方法是什么？实验用了哪些数据集？"></textarea>
           <button class="btn" onclick="askThisPaper()">提问</button>
+          <p id="lastAnswerHint" class="hint" style="display:none">以下是该论文最近一次提问的回答。</p>
           <pre id="answer" class="light" style="display:none"></pre>
           <div id="citations" class="cites"></div>
         </details>
@@ -515,6 +532,19 @@ def create_app(config_path: str | None = None) -> FastAPI:
             const line = m[2].split('-')[0];
             return `<a href="/reader/${{encodeURIComponent(base)}}?raw=1&lang=${{zh?'zh':'en'}}#L${{line}}" target="_blank">${{c}}</a>`;
           }}).join(' ') || '<span class="muted">无结构化引用</span>';
+        }}
+        async function loadLastAnswer() {{
+          try {{
+            const r = await fetch('/api/qa/last?paper_id=' + encodeURIComponent(PAPER_ID));
+            if (!r.ok) return;
+            const d = await r.json();
+            if (!d.answer) return;
+            const box = document.getElementById('answer');
+            box.style.display = 'block';
+            box.textContent = d.answer + `\n\nConfidence: ${{d.confidence}} · 工具调用: ${{d.tool_calls}} · tokens: ${{(d.prompt_tokens||0)+(d.completion_tokens||0)}}`;
+            document.getElementById('citations').innerHTML = citeLinks(d.citations);
+            document.getElementById('lastAnswerHint').style.display = 'block';
+          }} catch (e) {{}}
         }}
         async function askThisPaper() {{
           const q = document.getElementById('question').value.trim();
@@ -537,6 +567,7 @@ def create_app(config_path: str | None = None) -> FastAPI:
             box.textContent = '提问失败：' + e.message;
           }}
         }}
+        loadLastAnswer();
         if (new URLSearchParams(location.search).get('ask') === '1' || location.hash === '#ask') {{
           const panel = document.getElementById('ask');
           if (panel) {{ panel.open = true; panel.scrollIntoView({{behavior:'smooth'}}); }}
