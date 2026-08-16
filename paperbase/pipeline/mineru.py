@@ -126,8 +126,45 @@ class MinerUClient:
         return dest
 
 
+IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".gif", ".webp", ".bmp", ".svg"}
+
+
+def extract_mineru_zip(zip_path: str | Path, md_path: str | Path, min_chars: int = 200) -> str:
+    """Extract full.md plus referenced images next to the target markdown.
+
+    Images are stored in `<md_stem>_assets/...` preserving MinerU's relative
+    paths (usually `images/...`), so original `![](images/x.jpg)` links can be
+    served by the web reader.
+    """
+    md_path = Path(md_path)
+    assets_root = md_path.parent / f"{md_path.stem}_assets"
+    with zipfile.ZipFile(zip_path) as zf:
+        names = zf.namelist()
+        md_name = next((n for n in names if n.endswith("full.md")), None)
+        if not md_name:
+            raise MinerUError("MinerU zip contains no full.md")
+        text = zf.read(md_name).decode("utf-8", errors="replace")
+
+        for name in names:
+            if Path(name).suffix.lower() not in IMAGE_EXTENSIONS:
+                continue
+            dest = (assets_root / name).resolve()
+            root = assets_root.resolve()
+            try:
+                dest.relative_to(root)
+            except ValueError:
+                continue  # never write outside the assets directory
+            dest.parent.mkdir(parents=True, exist_ok=True)
+            with zf.open(name) as src, open(dest, "wb") as out:
+                out.write(src.read())
+
+    if len(text.strip()) < min_chars:
+        raise MinerUError(f"MinerU markdown too short: {len(text.strip())} chars < {min_chars}")
+    return text
+
+
 def extract_full_md(zip_path: str | Path, min_chars: int = 200) -> str:
-    """Find and return full.md content from a MinerU result zip."""
+    """Compatibility wrapper: return only full.md content."""
     with zipfile.ZipFile(zip_path) as zf:
         names = [n for n in zf.namelist() if n.endswith("full.md")]
         if not names:
@@ -220,13 +257,16 @@ def run_parse_task(
             raise MinerUError(f"MinerU result missing full_zip_url: {result}")
 
         set_parse_status(conn, paper_id, "downloading")
+        paper = get_paper(conn, paper_id)  # refresh tags/authors before writing
+        md_path = paths.paper_md(paper)
         tmp_dir = paths.task_tmp("parse_pdf", task_id)
         tmp_dir.mkdir(parents=True, exist_ok=True)
         zip_path = client.download_zip(zip_url, tmp_dir / "result.zip")
-        md_text = extract_full_md(zip_path, int(config.get("mineru", {}).get("min_md_chars", 200)))
-
-        paper = get_paper(conn, paper_id)  # refresh tags/authors
-        md_path = paths.paper_md(paper)
+        md_text = extract_mineru_zip(
+            zip_path,
+            md_path,
+            int(config.get("mineru", {}).get("min_md_chars", 200)),
+        )
         write_markdown_atomic(md_path, build_front_matter(paper) + md_text)
         set_local_file(conn, paper_id, md_path=str(md_path))
         set_parse_status(conn, paper_id, "done")
@@ -258,6 +298,7 @@ __all__ = [
     "MinerUClient",
     "MinerUError",
     "extract_full_md",
+    "extract_mineru_zip",
     "build_front_matter",
     "write_markdown_atomic",
     "daily_parse_count",

@@ -11,6 +11,7 @@ from paperbase.db import get_paper, init_db, utcnow
 from paperbase.paths import PaperPaths
 from paperbase.pipeline.digest import build_daily_digest, queue_papers
 from paperbase.pipeline.filter import apply_rules
+from paperbase.pipeline.handlers import process_task
 from paperbase.pipeline.pdf import ingest_uploaded_pdf
 from paperbase.sources import fetch_source
 from paperbase.sources.import_legacy import import_legacy
@@ -160,6 +161,10 @@ def build_parser() -> argparse.ArgumentParser:
     p_web.add_argument("--host", default=None)
     p_web.add_argument("--port", type=int, default=None)
     p_web.set_defaults(func=cmd_web)
+
+    p_reparse = sub.add_parser("reparse", help="force MinerU re-parse of one paper")
+    p_reparse.add_argument("paper_id")
+    p_reparse.set_defaults(func=cmd_reparse)
 
     p_read = sub.add_parser("read", help="show paper metadata and first lines of markdown")
     p_read.add_argument("paper_id")
@@ -316,6 +321,35 @@ def cmd_doctor(args) -> int:
         return 1
     print("[ok] doctor checks passed")
     return 0
+
+
+def cmd_reparse(args) -> int:
+    from paperbase.db import get_paper as get_p
+    from paperbase.tasks import content_hash, enqueue_task, task_to_dict
+
+    config, paths, conn = _open_db(args)
+    paper = get_p(conn, args.paper_id)
+    if not paper:
+        print(f"paper not found: {args.paper_id}")
+        return 1
+    pdf_path = paper.get("local_pdf") or ""
+    if not Path(pdf_path).exists():
+        print("local PDF not found; upload or restore it first")
+        return 1
+    tid = enqueue_task(
+        conn,
+        paper_id=paper["id"],
+        task_type="parse_pdf",
+        payload={"pdf_path": pdf_path},
+        input_hash=content_hash("reparse", paper["id"], utcnow()),
+    )
+    task = task_to_dict(conn.execute("SELECT * FROM tasks WHERE id=?", (tid,)).fetchone())
+    process_task(conn, config, paths, task)
+    row = conn.execute("SELECT status, last_error FROM tasks WHERE id=?", (tid,)).fetchone()
+    print(f"reparse task {tid}: {row['status']}")
+    if row["last_error"]:
+        print(row["last_error"])
+    return 0 if row["status"] == "done" else 1
 
 
 def main(argv: list[str] | None = None) -> int:

@@ -125,6 +125,11 @@ def test_upload_and_reader_flow(client, tmp_path):
     assert body["authors"] == ["Alice", "Bob"]
     assert body["tags"] == ["rag", "kbqa"]
     assert body["extra"]["issn"] == "1234-5678"
+    # Original PDF should be viewable even before parsing.
+    r = client.get(f"/reader/{paper_id}/pdf")
+    assert r.status_code == 200
+    assert r.content[:5] == b"%PDF-"
+
     # Reader should 404 before parsing, not 500.
     r = client.get(f"/reader/{paper_id}")
     assert r.status_code == 404
@@ -145,6 +150,14 @@ def test_upload_and_reader_flow(client, tmp_path):
     r = client.get(f"/reader/{paper_id}?raw=1")
     assert r.status_code == 200
     assert 'id="L1"' in r.text
+
+    # Images extracted next to the markdown are served through the asset route.
+    assets = md_path.parent / f"{md_path.stem}_assets" / "images"
+    assets.mkdir(parents=True)
+    (assets / "a.jpg").write_bytes(b"fakejpg")
+    r = client.get(f"/reader/{paper_id}/assets/images/a.jpg")
+    assert r.status_code == 200
+    assert r.content == b"fakejpg"
 
     r = client.get(f"/reader/{paper_id}")
     assert r.status_code == 200

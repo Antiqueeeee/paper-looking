@@ -133,6 +133,21 @@ def test_run_parse_task_short_result_requeues(conn, paths, tmp_path):
     assert "too short" in row["last_error"]
 
 
+def test_extract_mineru_zip_preserves_images(tmp_path):
+    import zipfile
+    from paperbase.pipeline.mineru import extract_mineru_zip
+
+    z = tmp_path / "r.zip"
+    with zipfile.ZipFile(z, "w") as zf:
+        zf.writestr("full.md", "Figure\n\n![](images/a.jpg)\n" + "x" * 300)
+        zf.writestr("images/a.jpg", b"fakejpg")
+    md = tmp_path / "out" / "p1.md"
+    text = extract_mineru_zip(z, md, min_chars=200)
+    assert "images/a.jpg" in text
+    img = md.parent / "p1_assets" / "images" / "a.jpg"
+    assert img.read_bytes() == b"fakejpg"
+
+
 def test_storage_eviction_skips_unparsed_and_restores(conn, paths):
     store = FilesystemObjectStore(paths.root / "cold")
     hot1 = _pdf(paths.hot_pdf("p1"))

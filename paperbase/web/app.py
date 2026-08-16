@@ -5,6 +5,7 @@ import html as html_mod
 import json
 import logging
 import os
+import re
 import threading
 import shutil
 import tempfile
@@ -12,7 +13,7 @@ from pathlib import Path
 from typing import Any
 
 from fastapi import BackgroundTasks, Depends, FastAPI, File, Form, HTTPException, UploadFile
-from fastapi.responses import HTMLResponse
+from fastapi.responses import FileResponse, HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
@@ -57,6 +58,19 @@ def _drain_queued_tasks(config_path: str | None) -> None:
         if conn is not None:
             conn.close()
         _drain_lock.release()
+
+
+def _assets_root(paper: dict) -> Path | None:
+    md_path = paper.get("md_path") or ""
+    if not md_path:
+        return None
+    p = Path(md_path)
+    return p.parent / f"{p.stem}_assets"
+
+
+def _has_pdf(paper: dict) -> bool:
+    local = paper.get("local_pdf") or ""
+    return bool(local and Path(local).exists()) or bool(paper.get("object_key"))
 
 
 def _status_widget(paper: dict) -> str:
@@ -456,6 +470,11 @@ def create_app(config_path: str | None = None) -> FastAPI:
         import markdown as md
 
         text = Path(path_value).read_text(encoding="utf-8")
+        text = re.sub(
+            r"!\[([^\]]*)\]\(((?!https?://|/|#|data:)[^)]+)\)",
+            rf"![\1](/reader/{paper_id}/assets/\2)",
+            text,
+        )
         if raw:
             lines = text.splitlines()
             body = "\n".join(
@@ -467,7 +486,9 @@ def create_app(config_path: str | None = None) -> FastAPI:
                 "<meta name='viewport' content='width=device-width, initial-scale=1, viewport-fit=cover'>"
                 f"<title>{html_mod.escape(paper['title'])}</title><link rel='stylesheet' href='/static/style.css'></head><body>"
                 "<header class='topbar one-line'><div class='brand'><a href='/'>📚 PaperBase</a></div>"
-                f"<div class='nav-links'><a class='btn ghost' href='/'>返回</a><a class='btn ghost' href='?raw=0&lang={lang}'>渲染版</a></div></header>"
+                f"<div class='nav-links'><a class='btn ghost' href='/'>返回</a><a class='btn ghost' href='?raw=0&lang={lang}'>渲染版</a>"
+                + (f"<a class='btn ghost' href='/reader/{paper_id}/pdf' target='_blank'>原 PDF</a>" if _has_pdf(paper) else "")
+                + "</div></header>"
                 f"<main class='container'><div class='card'><h1>{html_mod.escape(paper['title'])}</h1>"
                 f"<p>{_status_widget(paper)}</p><pre class='reader-raw'>{body}</pre></div></main></body></html>"
             )
@@ -530,11 +551,61 @@ def create_app(config_path: str | None = None) -> FastAPI:
             f"<a class='btn ghost' href='?lang=en'>English</a>"
             f"<a class='btn ghost' href='?lang=zh'>中文</a>"
             f"<a class='btn ghost' href='?raw=1'>原文行号</a>"
-            "</div></header>"
+            + (f"<a class='btn ghost' href='/reader/{paper_id}/pdf' target='_blank'>原 PDF</a>" if _has_pdf(paper) else "")
+            + "</div></header>"
             f"<main class='container'><div class='card'><h1>{html_mod.escape(paper['title'])}</h1>"
             f"<p>{_status_widget(paper)}</p>{ask_panel}<div class='reader-body'>{body_html}</div></div></main>"
             "</body></html>"
         )
+
+    @app.get("/reader/{paper_id}/assets/{asset_path:path}")
+    def reader_asset(paper_id: str, asset_path: str, res=Depends(resources)):
+        _, _, conn = res
+        paper = get_paper(conn, paper_id)
+        if not paper:
+            raise HTTPException(404, "paper not found")
+        root = _assets_root(paper)
+        if root is None:
+            raise HTTPException(404, "assets not found")
+        target = (root / asset_path).resolve()
+        try:
+            target.relative_to(root.resolve())
+        except ValueError as exc:
+            raise HTTPException(400, "illegal asset path") from exc
+        if not target.is_file():
+            raise HTTPException(404, "asset not found")
+        return FileResponse(target)
+
+    @app.get("/reader/{paper_id}/pdf")
+    def reader_pdf(paper_id: str, res=Depends(resources)):
+        config, paths, conn = res
+        paper = get_paper(conn, paper_id)
+        if not paper:
+            raise HTTPException(404, "paper not found")
+        local = Path(paper.get("local_pdf") or "")
+        if local.is_file():
+            return FileResponse(
+                local,
+                media_type="application/pdf",
+                filename=f"{paper_id}.pdf",
+                content_disposition_type="inline",
+            )
+        if paper.get("object_key"):
+            try:
+                from paperbase.pipeline.storage_manager import get_object_store, restore_cold_pdf
+
+                store = get_object_store(config, paths)
+                restored = restore_cold_pdf(conn, paths, store, paper_id)
+                if restored and restored.is_file():
+                    return FileResponse(
+                        restored,
+                        media_type="application/pdf",
+                        filename=f"{paper_id}.pdf",
+                        content_disposition_type="inline",
+                    )
+            except Exception as exc:
+                raise HTTPException(500, f"failed to restore cold PDF: {exc}") from exc
+        raise HTTPException(404, "PDF not available; upload the PDF first")
 
     return app
 
