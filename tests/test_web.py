@@ -45,6 +45,11 @@ def test_index_and_digest_pages(client):
     assert "全部来源" in r.text
     assert "英文阅读 + 提问" in r.text
     assert "想读：自动解析+翻译" in r.text
+    r = client.get("/static/style.css")
+    assert r.status_code == 200
+    assert ".view{display:none}" in r.text
+    assert ".view.active{display:block}" in r.text
+
     r = client.get("/digest")
     assert r.status_code in (200, 404)  # digest may or may not exist yet
     r = client.get("/api/tags")
