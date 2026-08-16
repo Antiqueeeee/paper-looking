@@ -126,7 +126,9 @@ def test_qa_last_restore(client):
     r = client.get("/api/qa", params={"paper_id": "2026.acl-long.1"})
     assert r.status_code == 200
     assert r.json()["total"] == 1
-    assert r.json()["items"][0]["question"] == "q?"
+    item = r.json()["items"][0]
+    assert item["question"] == "q?"
+    assert "the answer" in item["answer_html"]
 
 
 def test_upload_and_reader_flow(client, tmp_path):

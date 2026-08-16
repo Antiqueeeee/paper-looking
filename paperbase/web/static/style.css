@@ -78,6 +78,14 @@ td,th{border:1px solid var(--border);padding:.4rem .55rem;font-size:.85rem;text-
 .chat-label{font-size:.75rem;font-weight:800;color:var(--muted);margin-bottom:.25rem}
 .chat-msg.user .chat-label{color:#3730a3}
 .chat-msg pre{background:transparent;border:0;padding:0;margin:.2rem 0;white-space:pre-wrap;font-size:.88rem;color:var(--text)}
+.md-body{font-size:.9rem;line-height:1.6;overflow-wrap:break-word}
+.md-body p{margin:.4rem 0}
+.md-body h1,.md-body h2,.md-body h3,.md-body h4{font-size:1rem;margin:.5rem 0}
+.md-body ul,.md-body ol{margin:.3rem 0;padding-left:1.4rem}
+.md-body code{background:#eef2ff;padding:.05rem .3rem;border-radius:4px}
+.md-body pre{background:#f8fafc;border:1px solid var(--border);padding:.6rem;border-radius:8px;overflow-x:auto}
+.md-body table{border-collapse:collapse;display:block;overflow-x:auto}
+.md-body td,.md-body th{border:1px solid var(--border);padding:.3rem .5rem;font-size:.85rem}
 /* Q&A history */
 .qa-section{border:1px solid var(--border);border-radius:12px;padding:.6rem .8rem;margin:0 0 1rem;background:#fff}
 .qa-section summary{font-weight:700;font-size:1rem;cursor:pointer;min-height:44px;display:flex;align-items:center}

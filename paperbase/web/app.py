@@ -74,6 +74,33 @@ def _has_pdf(paper: dict) -> bool:
     return bool(local and Path(local).exists()) or bool(paper.get("object_key"))
 
 
+ALLOWED_HTML_TAGS = [
+    "p", "br", "strong", "b", "em", "i", "u", "s", "code", "pre",
+    "h1", "h2", "h3", "h4", "h5", "h6", "ul", "ol", "li", "blockquote",
+    "a", "table", "thead", "tbody", "tr", "th", "td", "hr", "span", "div",
+]
+ALLOWED_HTML_ATTRS = {
+    "a": ["href", "title"],
+    "img": ["src", "alt", "title"],
+    "code": ["class"],
+}
+
+
+def render_markdown_html(text: str) -> str:
+    """Render model Markdown to sanitized HTML."""
+    import bleach
+    import markdown as md
+
+    body = md.markdown(text or "", extensions=["tables", "fenced_code", "sane_lists"])
+    return bleach.clean(
+        body,
+        tags=ALLOWED_HTML_TAGS,
+        attributes=ALLOWED_HTML_ATTRS,
+        protocols=["http", "https", "mailto"],
+        strip=True,
+    )
+
+
 def _status_widget(paper: dict) -> str:
     """Read-status controls embedded in the reader page."""
     pid = json.dumps(paper["id"], ensure_ascii=False)
@@ -516,6 +543,7 @@ def create_app(config_path: str | None = None) -> FastAPI:
             d = dict(row)
             d["citations"] = json.loads(d.get("citations") or "[]")
             d["paper_ids"] = json.loads(d.get("paper_ids") or "[]")
+            d["answer_html"] = render_markdown_html(d.get("answer") or "")
             out.append(d)
         return out
 
@@ -545,7 +573,9 @@ def create_app(config_path: str | None = None) -> FastAPI:
             paper_ids=body.paper_ids,
             history=body.history[-6:],
         )
-        return answer.__dict__
+        payload = answer.__dict__
+        payload["answer_html"] = render_markdown_html(answer.answer)
+        return payload
 
     @app.get("/reader/{paper_id}", response_class=HTMLResponse)
     def reader(paper_id: str, lang: str = "en", raw: bool = False, res=Depends(resources)):
@@ -611,15 +641,22 @@ def create_app(config_path: str | None = None) -> FastAPI:
             return `<a href="/reader/${{encodeURIComponent(base)}}?raw=1&lang=${{zh?'zh':'en'}}#L${{line}}" target="_blank">${{c}}</a>`;
           }}).join(' ') || '<span class="muted">无结构化引用</span>';
         }}
-        function chatBubble(role, text, citations) {{
+        function chatBubble(role, text, citations, html) {{
           const wrap = document.createElement('div');
           wrap.className = 'chat-msg ' + role;
           const label = document.createElement('div');
           label.className = 'chat-label';
           label.textContent = role === 'user' ? '我' : 'AI';
-          const pre = document.createElement('pre');
-          pre.textContent = text;
-          wrap.appendChild(label); wrap.appendChild(pre);
+          if (html) {{
+            const body = document.createElement('div');
+            body.className = 'md-body';
+            body.innerHTML = html;
+            wrap.appendChild(body);
+          }} else {{
+            const pre = document.createElement('pre');
+            pre.textContent = text;
+            wrap.appendChild(pre);
+          }}
           if (citations && citations.length) {{
             const cites = document.createElement('div');
             cites.className = 'cites';
@@ -633,8 +670,8 @@ def create_app(config_path: str | None = None) -> FastAPI:
           if (!box) return;
           box.innerHTML = '';
           (sessionHistory || []).forEach(t => {{
-            box.appendChild(chatBubble('user', t.question, []));
-            box.appendChild(chatBubble('ai', t.answer, t.citations || []));
+            box.appendChild(chatBubble('user', t.question, [], ''));
+            box.appendChild(chatBubble('ai', t.answer, t.citations || [], t.answer_html || ''));
           }});
           if (!sessionHistory.length) box.innerHTML = '<p class="hint">可以连续提问：先问一个，再基于回答继续追问。</p>';
         }}
@@ -653,8 +690,9 @@ def create_app(config_path: str | None = None) -> FastAPI:
               const when = (item.created_at || '').slice(0, 16).replace('T', ' ');
               summary.textContent = 'Q' + (idx + 1) + ' · ' + item.question + ' · ' + Math.round((item.confidence || 0) * 100) + '%' + (when ? ' · ' + when : '');
               details.appendChild(summary);
-              const pre = document.createElement('pre');
-              pre.textContent = item.answer;
+              const pre = document.createElement('div');
+              pre.className = 'md-body';
+              pre.innerHTML = item.answer_html || '';
               const cites = document.createElement('div');
               cites.className = 'cites';
               cites.innerHTML = citeLinks(item.citations);
@@ -687,9 +725,9 @@ def create_app(config_path: str | None = None) -> FastAPI:
             }});
             if (!r.ok) throw new Error(await r.text());
             const d = await r.json();
-            const ansText = d.answer + `\n\nConfidence: ${{d.confidence}} · 工具调用: ${{d.tool_calls}}`;
-            chat.replaceChild(chatBubble('ai', ansText, d.citations), waiting);
-            sessionHistory.push({{question: q, answer: d.answer, citations: d.citations || []}});
+            const ansText = d.answer;
+            chat.replaceChild(chatBubble('ai', ansText, d.citations, d.answer_html || ''), waiting);
+            sessionHistory.push({{question: q, answer: d.answer, answer_html: d.answer_html || '', citations: d.citations || []}});
             sessionHistory = sessionHistory.slice(-10);
             try {{ localStorage.setItem(SESSION_KEY, JSON.stringify(sessionHistory)); }} catch(e) {{}}
             loadQaHistory();
