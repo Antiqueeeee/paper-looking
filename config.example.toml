@@ -92,6 +92,7 @@ webhook_url = ""                    # 钉钉/飞书/企业微信/Slack webhook
 consecutive_fetch_failures = 3
 
 [access]
-token = ""                          # 访问令牌；留空表示仅内网访问
+# 访问密码。留空 = 不启用登录；公网部署务必设置。
+token = ""
 bind_host = "127.0.0.1"
 bind_port = 8000

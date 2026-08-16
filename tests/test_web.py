@@ -204,3 +204,26 @@ def test_upload_and_reader_flow(client, tmp_path):
     # Mark as done via the same endpoint the page uses.
     r = client.patch(f"/api/papers/{paper_id}", json={"status": "done"})
     assert r.json()["status"] == "done"
+
+
+def test_access_token_auth(tmp_path):
+    from fastapi.testclient import TestClient
+    from paperbase.web.app import create_app
+
+    data_dir = tmp_path / "data"
+    cfg = tmp_path / "config.toml"
+    cfg.write_text(
+        f'[paths]\ndata_dir = "{data_dir}"\n[access]\ntoken = "secret123"\n',
+        encoding="utf-8",
+    )
+    app = create_app(str(cfg))
+    with TestClient(app) as c:
+        assert c.get("/api/papers").status_code == 401
+        assert c.get("/", follow_redirects=False).status_code == 303
+        # health stays public for process monitoring
+        assert c.get("/api/health").status_code == 200
+        # login
+        r = c.post("/login", data={"password": "secret123", "next": "/"}, follow_redirects=False)
+        assert r.status_code == 303
+        assert c.get("/api/papers").status_code == 200
+        assert c.get("/").status_code == 200

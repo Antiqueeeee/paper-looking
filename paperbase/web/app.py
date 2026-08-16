@@ -6,6 +6,7 @@ import json
 import logging
 import os
 import re
+import secrets
 import threading
 import shutil
 import tempfile
@@ -13,7 +14,7 @@ from pathlib import Path
 from typing import Any
 
 from fastapi import BackgroundTasks, Depends, FastAPI, File, Form, HTTPException, UploadFile
-from fastapi.responses import FileResponse, HTMLResponse
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
@@ -130,6 +131,68 @@ def create_app(config_path: str | None = None) -> FastAPI:
         StaticFiles(directory=str(Path(__file__).with_name("static"))),
         name="static",
     )
+
+    PUBLIC_PATHS = ("/login", "/static", "/api/health", "/favicon.ico")
+    AUTH_COOKIE = "paperbase_auth"
+
+    def _auth_token() -> str:
+        cfg = load_config(config_path)
+        return str((cfg.get("access") or {}).get("token", "") or "")
+
+    @app.middleware("http")
+    async def auth_gate(request, call_next):
+        path = request.url.path
+        if path.startswith(PUBLIC_PATHS):
+            return await call_next(request)
+        token = _auth_token()
+        if not token:
+            return await call_next(request)
+        cookie = request.cookies.get(AUTH_COOKIE, "")
+        query_token = request.query_params.get("token", "")
+        if (cookie and secrets.compare_digest(cookie, token)) or (
+            query_token and secrets.compare_digest(query_token, token)
+        ):
+            return await call_next(request)
+        if path.startswith("/api/") or path.startswith("/reader/"):
+            return JSONResponse({"detail": "unauthorized"}, status_code=401)
+        return RedirectResponse(f"/login?next={request.url.path}", status_code=303)
+
+    @app.get("/login", response_class=HTMLResponse, include_in_schema=False)
+    def login_page(next: str = "/"):
+        return f"""
+        <html><head><meta charset='utf-8'>
+        <meta name='viewport' content='width=device-width, initial-scale=1, viewport-fit=cover'>
+        <title>PaperBase 登录</title><link rel='stylesheet' href='/static/style.css'></head><body>
+        <header class='topbar one-line'><div class='brand'>📚 PaperBase</div></header>
+        <main class='container'><div class='card'>
+        <h1>请输入访问密码</h1>
+        <form method='post' action='/login'>
+          <input type='password' name='password' placeholder='访问密码' autofocus required>
+          <input type='hidden' name='next' value='{next}'>
+          <button class='btn' type='submit'>进入</button>
+        </form>
+        <p class='hint'>登录状态会在本设备保留 30 天。</p>
+        </div></main></body></html>"""
+
+    @app.post("/login", include_in_schema=False)
+    def login_submit(password: str = Form(""), next: str = Form("/")):
+        if secrets.compare_digest(password, _auth_token()):
+            resp = RedirectResponse(next or "/", status_code=303)
+            resp.set_cookie(
+                AUTH_COOKIE,
+                _auth_token(),
+                max_age=30 * 24 * 3600,
+                httponly=True,
+                samesite="lax",
+            )
+            return resp
+        return RedirectResponse("/login?next=" + (next or "/"), status_code=303)
+
+    @app.get("/logout", include_in_schema=False)
+    def logout():
+        resp = RedirectResponse("/login", status_code=303)
+        resp.delete_cookie(AUTH_COOKIE)
+        return resp
 
     def resources():
         config = load_config(config_path)
