@@ -37,12 +37,19 @@ def test_index_and_digest_pages(client):
     assert "今日早报" in r.text
     assert "论文库" in r.text
     assert "全部标签" in r.text
+    assert "全部年份" in r.text
+    assert "全部来源" in r.text
     assert "阅读 &amp; 提问" in r.text
     r = client.get("/digest")
     assert r.status_code in (200, 404)  # digest may or may not exist yet
     r = client.get("/api/tags")
     assert r.status_code == 200
     assert "rag" in r.json()
+    r = client.get("/api/facets")
+    assert r.status_code == 200
+    body = r.json()
+    assert {"value": "rag", "label": "RAG"} in body["tags"]
+    assert {"value": "2026", "label": "2026 年"} in body["years"]
 
 
 def test_health_and_stats(client):

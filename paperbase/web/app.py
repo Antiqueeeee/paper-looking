@@ -234,6 +234,52 @@ def create_app(config_path: str | None = None) -> FastAPI:
                     values.append(t)
         return sorted(values)
 
+    @app.get("/api/facets")
+    def facets(res=Depends(resources)):
+        """Dropdown facets for the paper-library search form."""
+        from paperbase.pipeline.filter import TAG_NAMES
+
+        _, _, conn = res
+        tag_values: list[str] = []
+        for row in conn.execute("SELECT tags, user_tags FROM papers").fetchall():
+            for t in loads_list(row["tags"]) + loads_list(row["user_tags"]):
+                if t and t not in tag_values:
+                    tag_values.append(t)
+        years = [
+            r["year"] for r in conn.execute(
+                "SELECT DISTINCT year FROM papers WHERE year IS NOT NULL ORDER BY year DESC"
+            ).fetchall()
+        ]
+        source_labels = {
+            "acl": "ACL Anthology",
+            "openalex": "OpenAlex 期刊",
+            "crossref": "Crossref",
+            "arxiv": "arXiv",
+            "manual": "手动上传",
+        }
+        sources = [
+            {"value": r["source"], "label": source_labels.get(r["source"], r["source"])}
+            for r in conn.execute("SELECT DISTINCT source FROM papers ORDER BY source").fetchall()
+        ]
+        status_labels = {
+            "new": "新收录",
+            "in_queue": "待读队列",
+            "reading": "在读",
+            "done": "已读",
+            "later": "稍后",
+        }
+        return {
+            "tags": [
+                {"value": t, "label": TAG_NAMES.get(t, t)}
+                for t in sorted(tag_values)
+            ],
+            "years": [{"value": str(y), "label": f"{y} 年"} for y in years],
+            "sources": sources,
+            "statuses": [
+                {"value": k, "label": v} for k, v in status_labels.items()
+            ],
+        }
+
     @app.get("/api/stats")
     def stats(res=Depends(resources)):
         _, _, conn = res

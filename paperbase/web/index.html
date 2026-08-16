@@ -78,8 +78,9 @@ table{border-collapse:collapse;width:100%;min-width:480px}td,th{border:1px solid
       <div class="row">
         <input id="q" placeholder="标题 / 摘要关键词">
         <select id="tag"><option value="">全部标签</option></select>
-        <input id="year" placeholder="年份：2026" type="number">
-        <select id="status"><option value="">全部状态</option><option value="new">new</option><option value="in_queue">in_queue</option><option value="reading">reading</option><option value="done">done</option><option value="later">later</option></select>
+        <select id="year"><option value="">全部年份</option></select>
+        <select id="source"><option value="">全部来源</option></select>
+        <select id="status"><option value="">全部状态</option><option value="new">新收录</option><option value="in_queue">待读队列</option><option value="reading">在读</option><option value="done">已读</option><option value="later">稍后</option></select>
       </div>
       <div class="actions"><button class="btn" onclick="searchPapers()">搜索</button><button class="ghost" onclick="searchPapers()">刷新</button></div>
       <p class="hint" id="searchMeta"></p>
@@ -111,7 +112,7 @@ function show(name){
     digest:'今日早报',papers:'论文库',upload:'上传',stats:'统计'}[name])));
   $(name).classList.add('active');
   if(name==='digest')loadDigest();
-  if(name==='papers'){loadTags();searchPapers();}
+  if(name==='papers'){loadFacets();searchPapers();}
   if(name==='stats')loadStats();
 }
 function toast(m){const t=$('toast');t.textContent=m;t.style.display='block';setTimeout(()=>t.style.display='none',2600)}
@@ -122,16 +123,22 @@ async function loadDigest(){
   try{const d=await j('/api/digest/today');$('digestText').textContent=d.content}
   catch(e){$('digestText').textContent='暂无早报。先在服务器运行：paper today'}
 }
-async function loadTags(){
+let TAG_LABELS={},SOURCE_LABELS={},STATUS_LABELS={'new':'新收录','in_queue':'待读队列','reading':'在读','done':'已读','later':'稍后'};
+function label(t,map){return map[t]||t}
+async function loadFacets(){
   try{
-    const tags=await j('/api/tags');
-    const sel=$('tag'); const cur=sel.value;
-    sel.innerHTML='<option value="">全部标签</option>'+tags.map(t=>`<option value="${esc(t)}">${esc(t)}</option>`).join('');
-    sel.value=cur;
+    const d=await j('/api/facets');
+    TAG_LABELS={}; (d.tags||[]).forEach(t=>TAG_LABELS[t.value]=t.label);
+    SOURCE_LABELS={}; (d.sources||[]).forEach(s=>SOURCE_LABELS[s.value]=s.label);
+    for(const [id,vals] of [['tag',d.tags],['year',d.years],['source',d.sources]]){
+      const sel=$(id); const cur=sel.value;
+      sel.innerHTML=`<option value="">${id==='tag'?'全部标签':id==='year'?'全部年份':'全部来源'}</option>`+(vals||[]).map(v=>`<option value="${esc(v.value)}">${esc(v.label)}</option>`).join('');
+      sel.value=cur;
+    }
   }catch(e){}
 }
 async function searchPapers(){
-  const p=new URLSearchParams({q:$('q').value.trim(),tag:$('tag').value.trim(),year:$('year').value.trim(),status:$('status').value,limit:'50'});
+  const p=new URLSearchParams({q:$('q').value.trim(),tag:$('tag').value.trim(),year:$('year').value.trim(),source:$('source').value.trim(),status:$('status').value,limit:'50'});
   try{
     const d=await j('/api/papers?'+p);
     $('searchMeta').textContent=`共 ${d.total} 篇，显示 ${d.items.length} 篇`;
@@ -139,8 +146,8 @@ async function searchPapers(){
       <div class="paper">
         <h3><a href="/reader/${encodeURIComponent(x.id)}">${esc(x.title)}</a></h3>
         ${x.title_zh?`<div class="zh">${esc(x.title_zh)}</div>`:''}
-        <div class="meta">[${x.year||'?'}] ${esc(x.venue||'-')} · ${esc(x.source)} · pdf:${esc(x.pdf_status)} · parse:${esc(x.parse_status)} · translate:${esc(x.translate_status)}</div>
-        <div class="badges">${(x.tags||[]).map(t=>`<span>${esc(t)}</span>`).join('')}<span class="st">${esc(x.status)}</span></div>
+        <div class="meta">[${x.year||'?'}] ${esc(x.venue||'-')} · ${esc(label(x.source,SOURCE_LABELS))} · PDF:${esc(label(x.pdf_status,{'none':'无','needs_upload':'待上传','downloaded':'已下载','download_failed':'下载失败','cold':'冷存储'}))} · 解析:${esc(label(x.parse_status,{'none':'未解析','done':'已解析','failed':'失败'}))} · 翻译:${esc(label(x.translate_status,{'none':'未翻译','done':'已翻译','failed':'失败'}))}</div>
+        <div class="badges">${(x.tags||[]).map(t=>`<span>${esc(label(t,TAG_LABELS))}</span>`).join('')}<span class="st">${esc(label(x.status,STATUS_LABELS))}</span></div>
         <div class="actions">
           <a href="/reader/${encodeURIComponent(x.id)}?ask=1#ask"><button class="btn">阅读 &amp; 提问</button></a>
           <a href="/reader/${encodeURIComponent(x.id)}?lang=zh"><button class="ghost">中文阅读</button></a>
