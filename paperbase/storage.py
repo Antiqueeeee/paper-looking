@@ -76,6 +76,31 @@ def ensure_capacity(path: str | Path, incoming_bytes: int, quota_bytes: int) -> 
         )
 
 
+def prune_cache(path: str | Path, quota_bytes: int) -> int:
+    """Delete oldest files until the directory fits `quota_bytes`."""
+    if quota_bytes <= 0:
+        return 0
+    root = Path(path)
+    if not root.exists():
+        return 0
+    files = sorted(
+        (p for p in root.rglob("*") if p.is_file()),
+        key=lambda p: (p.stat().st_mtime, p.stat().st_atime),
+    )
+    removed = 0
+    total = dir_size_bytes(root)
+    for f in files:
+        if total <= quota_bytes:
+            break
+        try:
+            total -= f.stat().st_size
+            f.unlink()
+            removed += 1
+        except OSError:
+            pass
+    return removed
+
+
 def lru_candidates(path: str | Path, need_free_bytes: int) -> list[Path]:
     """Oldest-accessed files first, until enough bytes would be freed."""
     root = Path(path)
@@ -103,4 +128,5 @@ __all__ = [
     "disk_usage_ratio",
     "ensure_capacity",
     "lru_candidates",
+    "prune_cache",
 ]

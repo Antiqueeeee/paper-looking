@@ -210,8 +210,11 @@ def cmd_web(args) -> int:
     access = config.get("access", {})
     import uvicorn
 
+    from paperbase.web.app import create_app
+
+    app = create_app(args.config)
     uvicorn.run(
-        "paperbase.web.app:app",
+        app,
         host=args.host or access.get("bind_host", "127.0.0.1"),
         port=int(args.port or access.get("bind_port", 8000)),
         workers=1,

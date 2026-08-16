@@ -15,6 +15,11 @@ concurrency = 4
 due_time = "08:00"                  # 早报最晚生成时间
 top_n_per_tag = 30                  # 每个标签最多展示篇数
 
+[arxiv]                             # 可选数据源
+categories = ["cs.CL", "cs.AI", "cs.IR"]
+keywords = ["knowledge graph", "information extraction", "question answering"]
+max_results = 200
+
 [llm]
 base_url = "https://api.openai.com/v1"  # 也兼容 DeepSeek/Qwen/GLM 等
 api_key_env = "OPENAI_API_KEY"
@@ -32,6 +37,10 @@ keep_terms = ["GraphRAG", "KBQA", "RAG", "entity alignment", "LLM"]
 [mineru]
 base_url = ""                       # MinerU API base URL，例如 https://mineru.net/api/v4
 api_key_env = "MINERU_API_KEY"
+model_version = "vlm"               # pipeline / vlm / MinerU-HTML
+language = "en"                     # 文档语言
+enable_formula = true
+enable_table = true
 poll_interval_seconds = 5
 max_poll_seconds = 3600
 max_concurrent = 2

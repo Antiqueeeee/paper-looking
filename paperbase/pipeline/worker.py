@@ -2,12 +2,14 @@
 from __future__ import annotations
 
 import logging
+import threading
 import time
+from datetime import datetime
 from paperbase.alerts import alert_once_daily
 from paperbase.db import init_db
 from paperbase.paths import PaperPaths
 from paperbase.pipeline.handlers import process_task
-from paperbase.storage import disk_usage_ratio
+from paperbase.storage import disk_usage_ratio, prune_cache
 from paperbase.tasks import claim_next_task, fail_task, reset_running_tasks
 
 logger = logging.getLogger(__name__)
@@ -86,6 +88,8 @@ def run_task_loop(conn, config: dict, paths: PaperPaths, *, once: bool = False, 
     reset_running_tasks(conn)
     processed = 0
     all_types = ["download_pdf", "parse_pdf", "translate_full", "translate_meta"]
+    cache_quota = int(float(config.get("storage", {}).get("cache_quota_gb", 1)) * 1024 ** 3)
+    prune_cache(paths.cache_dir, cache_quota)
     while True:
         policy = check_disk_policy(conn, config, paths)
         types = [task_type] if task_type else all_types
@@ -123,9 +127,73 @@ def run_task_loop(conn, config: dict, paths: PaperPaths, *, once: bool = False, 
         time.sleep(0.05)
 
 
+class _FallbackScheduler:
+    """Minimal standard-library scheduler used when APScheduler is absent."""
+
+    def __init__(self, conn, config: dict, paths: PaperPaths):
+        self.conn = conn
+        self.config = config
+        self.paths = paths
+        self._stop = threading.Event()
+        self._thread: threading.Thread | None = None
+        schedule = str(config.get("fetch", {}).get("schedule", "07:30"))
+        try:
+            hour, minute = schedule.split(":", 1)
+            self.daily_hour, self.daily_minute = int(hour), int(minute)
+        except ValueError:
+            self.daily_hour, self.daily_minute = 7, 30
+
+    def _daily(self):
+        logger.info("daily pipeline started (fallback scheduler)")
+        try:
+            run_daily_pipeline(self.conn, self.config, self.paths)
+        except Exception:
+            logger.exception("daily pipeline failed")
+        try:
+            run_task_loop(self.conn, self.config, self.paths)
+        except Exception:
+            logger.exception("task loop failed")
+
+    def _tasks(self):
+        try:
+            run_task_loop(self.conn, self.config, self.paths)
+        except Exception:
+            logger.exception("task loop failed")
+
+    def _run(self):
+        last_daily = None
+        last_tasks = 0.0
+        while not self._stop.wait(10):
+            now = datetime.now()
+            if last_daily != now.date() and (now.hour, now.minute) >= (self.daily_hour, self.daily_minute):
+                last_daily = now.date()
+                self._daily()
+                last_tasks = time.time()
+            elif time.time() - last_tasks >= 300:
+                last_tasks = time.time()
+                self._tasks()
+
+    def start(self):
+        if self._thread is None:
+            self._thread = threading.Thread(target=self._run, name="paper-worker", daemon=True)
+            self._thread.start()
+
+    def shutdown(self, wait: bool = False):
+        self._stop.set()
+        if wait and self._thread:
+            self._thread.join(timeout=5)
+
+    def get_jobs(self):
+        return [{"id": "daily"}, {"id": "tasks"}]
+
+
 def build_scheduler(config: dict, conn, paths: PaperPaths):
-    from apscheduler.schedulers.background import BackgroundScheduler
-    from apscheduler.triggers.cron import CronTrigger
+    try:
+        from apscheduler.schedulers.background import BackgroundScheduler
+        from apscheduler.triggers.cron import CronTrigger
+    except ImportError:
+        logger.warning("APScheduler not installed; using standard-library fallback scheduler")
+        return _FallbackScheduler(conn, config, paths)
 
     scheduler = BackgroundScheduler()
     schedule = str(config.get("fetch", {}).get("schedule", "07:30"))
