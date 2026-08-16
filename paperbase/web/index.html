@@ -83,6 +83,7 @@ table{border-collapse:collapse;width:100%;min-width:480px}td,th{border:1px solid
         <select id="status"><option value="">全部状态</option><option value="new">新收录</option><option value="in_queue">待读队列</option><option value="reading">在读</option><option value="done">已读</option><option value="later">稍后</option></select>
       </div>
       <div class="actions"><button class="btn" onclick="searchPapers()">搜索</button><button class="ghost" onclick="searchPapers()">刷新</button></div>
+      <p class="hint">说明：“想读这篇”会加入阅读队列，系统随后自动下载 PDF（如可获取）、解析并翻译全文。</p>
       <p class="hint" id="searchMeta"></p>
       <div id="paperList"></div>
     </div>
@@ -142,18 +143,20 @@ async function searchPapers(){
   try{
     const d=await j('/api/papers?'+p);
     $('searchMeta').textContent=`共 ${d.total} 篇，显示 ${d.items.length} 篇`;
-    $('paperList').innerHTML=d.items.map(x=>`
+    $('paperList').innerHTML=d.items.map(x=>{
+      const zh=x.title_zh||'';
+      return `
       <div class="paper">
-        <h3><a href="/reader/${encodeURIComponent(x.id)}">${esc(x.title)}</a></h3>
-        ${x.title_zh?`<div class="zh">${esc(x.title_zh)}</div>`:''}
+        <h3><a href="/reader/${encodeURIComponent(x.id)}">${esc(zh||x.title)}</a></h3>
+        ${zh?`<div class="zh">${esc(x.title)}</div>`:''}
         <div class="meta">[${x.year||'?'}] ${esc(x.venue||'-')} · ${esc(label(x.source,SOURCE_LABELS))} · PDF:${esc(label(x.pdf_status,{'none':'无','needs_upload':'待上传','downloaded':'已下载','download_failed':'下载失败','cold':'冷存储'}))} · 解析:${esc(label(x.parse_status,{'none':'未解析','done':'已解析','failed':'失败'}))} · 翻译:${esc(label(x.translate_status,{'none':'未翻译','done':'已翻译','failed':'失败'}))}</div>
         <div class="badges">${(x.tags||[]).map(t=>`<span>${esc(label(t,TAG_LABELS))}</span>`).join('')}<span class="st">${esc(label(x.status,STATUS_LABELS))}</span></div>
         <div class="actions">
           <a href="/reader/${encodeURIComponent(x.id)}?ask=1#ask"><button class="btn">阅读 &amp; 提问</button></a>
           <a href="/reader/${encodeURIComponent(x.id)}?lang=zh"><button class="ghost">中文阅读</button></a>
-          <button class="ghost" onclick="queueOne('${esc(x.id)}')">加入队列</button>
+          <button class="ghost" onclick="queueOne('${esc(x.id)}')" title="自动下载PDF、解析、翻译">想读：自动解析+翻译</button>
         </div>
-      </div>`).join('') || '<p class="muted">没有结果</p>';
+      </div>`}).join('') || '<p class="muted">没有结果</p>';
   }catch(e){toast('搜索失败：'+e.message)}
 }
 async function queueOne(id){try{const d=await j('/api/queue',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({ids:[id]})});toast('已加入队列')}catch(e){toast(e.message)}}
