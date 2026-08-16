@@ -338,6 +338,20 @@ def count_papers(conn: sqlite3.Connection) -> int:
     return conn.execute("SELECT COUNT(*) FROM papers").fetchone()[0]
 
 
+def get_meta(conn: sqlite3.Connection, key: str, default: str = "") -> str:
+    row = conn.execute("SELECT value FROM meta WHERE key=?", (key,)).fetchone()
+    return row["value"] if row else default
+
+
+def set_meta(conn: sqlite3.Connection, key: str, value: str) -> None:
+    conn.execute(
+        "INSERT INTO meta(key, value) VALUES(?, ?) "
+        "ON CONFLICT(key) DO UPDATE SET value=excluded.value",
+        (key, value),
+    )
+    conn.commit()
+
+
 __all__ = [
     "SCHEMA_VERSION",
     "connect",
@@ -359,4 +373,6 @@ __all__ = [
     "set_note",
     "set_local_file",
     "count_papers",
+    "get_meta",
+    "set_meta",
 ]

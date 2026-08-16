@@ -13,10 +13,10 @@ from __future__ import annotations
 import hashlib
 import json
 import sqlite3
-from typing import Any, Mapping, Sequence
+from typing import Any, Mapping
 
 from .db import dumps_json, utcnow
-from .models import TaskStatus, TaskType
+from .models import TaskType
 
 
 def content_hash(*parts: object) -> str:

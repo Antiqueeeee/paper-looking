@@ -1,8 +1,6 @@
 """Wave 0 contract tests: config / paths / db / tasks / storage / llm types."""
 from __future__ import annotations
 
-import json
-
 import pytest
 
 from paperbase import config as cfg
@@ -123,7 +121,7 @@ def test_tasks_idempotent_and_claim_atomic(conn):
 
 
 def test_tasks_reset_running(conn):
-    t = tasks.enqueue_task(conn, paper_id="p1", task_type="translate_meta")
+    tasks.enqueue_task(conn, paper_id="p1", task_type="translate_meta")
     tasks.claim_next_task(conn, task_type="translate_meta")
     assert tasks.reset_running_tasks(conn) == 1
     assert tasks.pending_count(conn, "translate_meta") == 1
@@ -152,7 +150,6 @@ def test_filesystem_object_store_and_quota(tmp_path):
 
 def test_llm_client_serializes_tool_calls_without_network(monkeypatch):
     c = OpenAICompatibleClient(base_url="http://127.0.0.1:1/v1", api_key="x", model="m")
-    payload = None
 
     class FakeResp:
         status_code = 200
