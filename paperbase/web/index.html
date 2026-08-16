@@ -153,7 +153,7 @@ function toggleBatchMode(){
 function selectedIds(){return [...document.querySelectorAll('#paperList input[type=checkbox]:checked')].map(c=>c.value)}
 function updateBatch(){
   const n=selectedIds().length;
-  $('batchBar').style.display=n?'block':'none';
+  $('batchBar').classList.toggle('active', n>0);
   $('batchCount').textContent=n;
 }
 function clearBatch(){
