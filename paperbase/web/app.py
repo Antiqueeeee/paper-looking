@@ -114,6 +114,7 @@ class AskBody(BaseModel):
     question: str
     mode: str = "library"
     paper_ids: list[str] = Field(default_factory=list)
+    history: list[dict] = Field(default_factory=list)
 
 
 class PatchPaper(BaseModel):
@@ -479,6 +480,7 @@ def create_app(config_path: str | None = None) -> FastAPI:
             body.question.strip(),
             mode=body.mode if body.mode in ("paper", "library", "compare") else "library",
             paper_ids=body.paper_ids,
+            history=body.history[-6:],
         )
         return answer.__dict__
 
@@ -523,15 +525,17 @@ def create_app(config_path: str | None = None) -> FastAPI:
         body_html = md.markdown(text, extensions=["tables", "fenced_code"])
         paper_id_json = json.dumps(paper["id"], ensure_ascii=False)
         ask_panel = f"""
-        <details id="ask" class="ask-panel">
-          <summary>🤖 问这篇论文</summary>
-          <textarea id="question" rows="3" placeholder="例如：这篇论文的核心方法是什么？实验用了哪些数据集？"></textarea>
-          <button class="btn" onclick="askThisPaper()">提问</button>
-          <pre id="answer" class="light" style="display:none"></pre>
-          <div id="citations" class="cites"></div>
+        <details id="ask" class="ask-panel" open>
+          <summary>🤖 连续提问</summary>
+          <div id="chat" class="qa-chat"></div>
+          <textarea id="question" rows="3" placeholder="先问一个问题，然后可以继续追问：比如“那它和 BRAT 的区别呢？”"></textarea>
+          <button class="btn" onclick="askThisPaper()">发送</button>
         </details>
         <script>
         const PAPER_ID = {paper_id_json};
+        const SESSION_KEY = 'paperbase-qa-session-' + PAPER_ID;
+        let sessionHistory = [];
+        try {{ sessionHistory = JSON.parse(localStorage.getItem(SESSION_KEY) || '[]'); }} catch(e) {{ sessionHistory = []; }}
         function citeLinks(list) {{
           return (list || []).map(c => {{
             const m = c.match(/^\\[([^:\\]]+):([0-9]+(?:-[0-9]+)?)\\]$/);
@@ -543,6 +547,33 @@ def create_app(config_path: str | None = None) -> FastAPI:
             const line = m[2].split('-')[0];
             return `<a href="/reader/${{encodeURIComponent(base)}}?raw=1&lang=${{zh?'zh':'en'}}#L${{line}}" target="_blank">${{c}}</a>`;
           }}).join(' ') || '<span class="muted">无结构化引用</span>';
+        }}
+        function chatBubble(role, text, citations) {{
+          const wrap = document.createElement('div');
+          wrap.className = 'chat-msg ' + role;
+          const label = document.createElement('div');
+          label.className = 'chat-label';
+          label.textContent = role === 'user' ? '我' : 'AI';
+          const pre = document.createElement('pre');
+          pre.textContent = text;
+          wrap.appendChild(label); wrap.appendChild(pre);
+          if (citations && citations.length) {{
+            const cites = document.createElement('div');
+            cites.className = 'cites';
+            cites.innerHTML = citeLinks(citations);
+            wrap.appendChild(cites);
+          }}
+          return wrap;
+        }}
+        function renderChat() {{
+          const box = document.getElementById('chat');
+          if (!box) return;
+          box.innerHTML = '';
+          (sessionHistory || []).forEach(t => {{
+            box.appendChild(chatBubble('user', t.question, []));
+            box.appendChild(chatBubble('ai', t.answer, t.citations || []));
+          }});
+          if (!sessionHistory.length) box.innerHTML = '<p class="hint">可以连续提问：先问一个，再基于回答继续追问。</p>';
         }}
         async function loadQaHistory() {{
           const box = document.getElementById('qaHistory');
@@ -578,27 +609,32 @@ def create_app(config_path: str | None = None) -> FastAPI:
         async function askThisPaper() {{
           const q = document.getElementById('question').value.trim();
           if (!q) {{ alert('请输入问题'); return; }}
-          const box = document.getElementById('answer');
-          box.style.display = 'block';
-          box.textContent = '检索中，请稍候…';
-          document.getElementById('citations').innerHTML = '';
+          document.getElementById('question').value = '';
+          const chat = document.getElementById('chat');
+          chat.innerHTML = '';
+          chat.appendChild(chatBubble('user', q, []));
+          const waiting = chatBubble('ai', '检索中，请稍候…', []);
+          chat.appendChild(waiting);
           try {{
             const r = await fetch('/api/ask', {{
               method: 'POST',
               headers: {{'Content-Type': 'application/json'}},
-              body: JSON.stringify({{question: q, mode: 'paper', paper_ids: [PAPER_ID]}})
+              body: JSON.stringify({{question: q, mode: 'paper', paper_ids: [PAPER_ID], history: sessionHistory.slice(-6)}})
             }});
             if (!r.ok) throw new Error(await r.text());
             const d = await r.json();
-            box.textContent = d.answer + `\n\nConfidence: ${{d.confidence}} · 工具调用: ${{d.tool_calls}} · tokens: ${{(d.prompt_tokens||0)+(d.completion_tokens||0)}}`;
-            document.getElementById('citations').innerHTML = citeLinks(d.citations);
-            document.getElementById('question').value = '';
+            const ansText = d.answer + `\n\nConfidence: ${{d.confidence}} · 工具调用: ${{d.tool_calls}}`;
+            chat.replaceChild(chatBubble('ai', ansText, d.citations), waiting);
+            sessionHistory.push({{question: q, answer: d.answer, citations: d.citations || []}});
+            sessionHistory = sessionHistory.slice(-10);
+            try {{ localStorage.setItem(SESSION_KEY, JSON.stringify(sessionHistory)); }} catch(e) {{}}
             loadQaHistory();
           }} catch (e) {{
-            box.textContent = '提问失败：' + e.message;
+            chat.replaceChild(chatBubble('ai', '提问失败：' + e.message, []), waiting);
             loadQaHistory();
           }}
         }}
+        renderChat();
         if (document.readyState === 'loading') {{
           document.addEventListener('DOMContentLoaded', loadQaHistory);
         }} else {{

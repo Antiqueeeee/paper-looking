@@ -113,3 +113,19 @@ def test_tool_safety(conn, paths):
     b = paths.md_dir / "b.md"; b.write_text("other\n", encoding="utf-8")
     scoped = ToolContext(corpus_dir=paths.md_dir, db_path=paths.db_path, scope_files=[a])
     assert "outside current question scope" in execute_tool("read_file", {"path": "b.md", "start_line": 1, "end_line": 1}, scoped)
+
+
+def test_ask_carries_conversation_history(conn, paths):
+    _write_paper_md(conn, paths, "p1", "Some text about methods.\n", tags=[])
+    client = ScriptedClient([_final_resp("Explanation: [p1.md:1]\nExact Answer: ok\nConfidence: 80%")])
+    ans = DCIQAAgent(conn, {"dci": {"max_tool_calls": 5}}, paths, client).ask(
+        "它和之前那个有什么区别？",
+        mode="paper",
+        paper_ids=["p1"],
+        history=[{"question": "方法是什么？", "answer": "使用GraphRAG。"}],
+    )
+    assert ans.confidence == 0.8
+    sent = client.calls[0]["messages"][1]["content"]
+    assert "方法是什么？" in sent
+    assert "使用GraphRAG" in sent
+    assert "当前问题：它和之前那个有什么区别？" in sent

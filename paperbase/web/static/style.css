@@ -71,6 +71,13 @@ td,th{border:1px solid var(--border);padding:.4rem .55rem;font-size:.85rem;text-
 .ask-panel pre{background:#f8fafc;border:1px solid var(--border);white-space:pre-wrap;padding:.6rem;border-radius:8px;font-size:.85rem;color:var(--text)}
 .cites a{display:inline-block;color:var(--primary);text-decoration:none;margin:.15rem .4rem .15rem 0;font-size:.85rem}
 
+/* chat */
+.qa-chat{display:flex;flex-direction:column;gap:.6rem;margin:.4rem 0 .7rem;max-height:52vh;overflow-y:auto}
+.chat-msg{background:#f8fafc;border:1px solid var(--border);border-radius:12px;padding:.6rem .75rem}
+.chat-msg.user{background:#eef2ff;border-color:#c7d2fe}
+.chat-label{font-size:.75rem;font-weight:800;color:var(--muted);margin-bottom:.25rem}
+.chat-msg.user .chat-label{color:#3730a3}
+.chat-msg pre{background:transparent;border:0;padding:0;margin:.2rem 0;white-space:pre-wrap;font-size:.88rem;color:var(--text)}
 /* Q&A history */
 .qa-section{border:1px solid var(--border);border-radius:12px;padding:.6rem .8rem;margin:0 0 1rem;background:#fff}
 .qa-section summary{font-weight:700;font-size:1rem;cursor:pointer;min-height:44px;display:flex;align-items:center}

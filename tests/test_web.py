@@ -191,7 +191,7 @@ def test_upload_and_reader_flow(client, tmp_path):
 
     r = client.get(f"/reader/{paper_id}")
     assert r.status_code == 200
-    assert "问这篇论文" in r.text
+    assert "连续提问" in r.text
     assert "qaHistoryPanel" in r.text
     assert "历史问答（所有人可见，可复用）" in r.text
     assert "/static/style.css" in r.text

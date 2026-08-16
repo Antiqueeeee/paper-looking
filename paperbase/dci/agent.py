@@ -93,7 +93,14 @@ class DCIQAAgent:
             self.client = make_llm_client(self.config, self.conn)
         return self.client
 
-    def ask(self, question: str, *, mode: str = "library", paper_ids: list[str] | None = None) -> QAAnswer:
+    def ask(
+        self,
+        question: str,
+        *,
+        mode: str = "library",
+        paper_ids: list[str] | None = None,
+        history: list[dict] | None = None,
+    ) -> QAAnswer:
         paper_ids = [str(x) for x in (paper_ids or [])]
         max_tool_calls = int(self.config.get("dci", {}).get("max_tool_calls", 30))
         tool_output_chars = int(self.config.get("dci", {}).get("tool_output_chars", 12000))
@@ -118,9 +125,25 @@ class DCIQAAgent:
             tool_output_chars=tool_output_chars,
         )
 
+        user_content = f"问题：{question}"
+        if history:
+            turns = []
+            for item in history[-6:]:
+                q = str(item.get("question", "")).strip()
+                a = str(item.get("answer", "")).strip()
+                if q and a:
+                    turns.append(f"Q: {q}\nA: {a[:3000]}")
+            if turns:
+                user_content = (
+                    "以下是本次会话的最近问答，仅用于理解当前问题中的指代和上下文；"
+                    "新回答仍然必须基于论文原文，不得把历史回答当作新证据。\n\n"
+                    + "\n\n".join(turns)
+                    + f"\n\n当前问题：{question}"
+                )
+
         messages: list[dict] = [
             {"role": "system", "content": system},
-            {"role": "user", "content": f"问题：{question}"},
+            {"role": "user", "content": user_content},
         ]
         tools = _tool_definitions()
         answer_text = ""
