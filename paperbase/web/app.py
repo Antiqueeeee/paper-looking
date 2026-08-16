@@ -153,7 +153,7 @@ def create_app(config_path: str | None = None) -> FastAPI:
             query_token and secrets.compare_digest(query_token, token)
         ):
             return await call_next(request)
-        if path.startswith("/api/") or path.startswith("/reader/"):
+        if path.startswith("/api/"):
             return JSONResponse({"detail": "unauthorized"}, status_code=401)
         return RedirectResponse(f"/login?next={request.url.path}", status_code=303)
 
