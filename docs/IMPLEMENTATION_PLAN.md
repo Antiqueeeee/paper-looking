@@ -232,7 +232,7 @@ tests/test_filter_translate_digest.py
 
 - [ ] 规则可配置，重跑不覆盖用户标签
 - [ ] 同内容不重复翻译、原文变化会重译
-- [ ] 08:00 前生成早报（可配置）
+- [ ] 每周一 03:00 前生成早报（可配置）
 - [ ] 勾选幂等，重复勾选不重复建任务
 - [ ] `tests/test_filter_translate_digest.py` 通过
 
@@ -361,7 +361,7 @@ tests/test_e2e_daily_flow.py
 
 **任务：**
 
-1. APScheduler：07:30 抓取 → 匹配 → 翻译 → 08:00 早报。
+1. APScheduler：每周一 02:00 抓取 → 匹配 → 翻译 → 03:00 前早报。
 2. worker 任务循环：按优先级消费 `tasks` 表，进程重启可恢复。
 3. systemd 两个服务：`paper-web`（≤512M）、`paper-worker`（≤1G）。
 4. Litestream 备份到对象存储，恢复演练。

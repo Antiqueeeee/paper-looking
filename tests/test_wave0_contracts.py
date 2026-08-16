@@ -35,7 +35,7 @@ def conn(paths):
 
 def test_config_defaults():
     c = cfg.load_config()
-    assert c["fetch"]["schedule"] == "07:30"
+    assert c["fetch"]["schedule"] == "0 2 * * 1"  # Monday 02:00
     assert c["dci"]["max_tool_calls"] == 30
     assert c["pdf"]["hot_quota_gb"] == 6
 

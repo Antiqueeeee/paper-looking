@@ -70,13 +70,13 @@ DEFAULTS: dict[str, Any] = {
         "data_dir": "./data",
     },
     "fetch": {
-        "schedule": "07:30",
+        "schedule": "0 2 * * 1",
         "sources": ["acl", "openalex"],
         "years": [2024, 2025, 2026],
         "concurrency": 4,
     },
     "digest": {
-        "due_time": "08:00",
+        "due_time": "03:00",
         "top_n_per_tag": 30,
     },
     "llm": {

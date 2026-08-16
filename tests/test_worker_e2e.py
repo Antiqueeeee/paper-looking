@@ -50,6 +50,24 @@ def test_daily_pipeline_fetch_then_digest(conn, paths, tmp_path, monkeypatch):
     assert "GraphRAG" in digest_file.read_text(encoding="utf-8")
 
 
+def test_parse_schedule_weekly_and_daily():
+    from datetime import datetime
+    from paperbase.pipeline.worker import _FallbackScheduler, parse_schedule
+
+    assert parse_schedule("0 2 * * 1")["kind"] == "cron"
+    class Cfg:
+        fetch = {"schedule": "0 2 * * 1"}
+    s = _FallbackScheduler.__new__(_FallbackScheduler)
+    s.schedule = parse_schedule("0 2 * * 1")
+    # Monday 02:00 matches; Tuesday 02:00 does not.
+    assert s._matches(datetime(2026, 8, 17, 2, 0))
+    assert not s._matches(datetime(2026, 8, 18, 2, 0))
+    daily = _FallbackScheduler.__new__(_FallbackScheduler)
+    daily.schedule = parse_schedule("03:30")
+    assert daily._matches(datetime(2026, 8, 17, 3, 30))
+    assert not daily._matches(datetime(2026, 8, 17, 4, 30))
+
+
 def test_disk_policy_thresholds(conn, paths, monkeypatch):
     from paperbase.pipeline import worker as worker_mod
 

@@ -6,13 +6,13 @@
 data_dir = "./data"                 # SQLite + md + pdf 的根目录
 
 [fetch]
-schedule = "07:30"                  # 每日定时抓取时间，支持 cron 表达式
+schedule = "0 2 * * 1"             # 每周一凌晨 02:00 抓取（cron：分 时 日 月 周）
 sources = ["acl", "openalex"]       # 可选：acl / openalex / arxiv
 years = [2024, 2025, 2026]          # ACL 抓取年份范围
 concurrency = 4
 
 [digest]
-due_time = "08:00"                  # 早报最晚生成时间
+due_time = "03:00"                  # 周一抓取完成后早报最晚生成时间
 top_n_per_tag = 30                  # 每个标签最多展示篇数
 
 [arxiv]                             # 可选数据源

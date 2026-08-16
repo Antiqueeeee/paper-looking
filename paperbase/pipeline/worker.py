@@ -127,6 +127,49 @@ def run_task_loop(conn, config: dict, paths: PaperPaths, *, once: bool = False, 
         time.sleep(0.05)
 
 
+def _cron_field_values(field: str, lo: int, hi: int) -> set[int]:
+    """Expand one cron field: * , list, range and step."""
+    out: set[int] = set()
+    for part in str(field).split(","):
+        part = part.strip()
+        if not part:
+            continue
+        step = 1
+        if "/" in part:
+            part, step_s = part.split("/", 1)
+            step = int(step_s or 1)
+        if part in ("*", ""):
+            vals = range(lo, hi + 1)
+        elif "-" in part:
+            a, b = part.split("-", 1)
+            vals = range(int(a), int(b) + 1)
+        else:
+            vals = [int(part)]
+        for v in vals:
+            if lo <= v <= hi and (v - lo) % step == 0:
+                out.add(v)
+    return out
+
+
+def parse_schedule(schedule: str) -> dict:
+    """Return {'kind': 'daily'|'cron', ...} for worker scheduling."""
+    schedule = str(schedule or "0 2 * * 1").strip()
+    if ":" in schedule and len(schedule.split()) == 1:
+        hour, minute = schedule.split(":", 1)
+        return {"kind": "daily", "hour": int(hour), "minute": int(minute)}
+    fields = schedule.split()
+    if len(fields) == 5:
+        return {
+            "kind": "cron",
+            "minute": _cron_field_values(fields[0], 0, 59),
+            "hour": _cron_field_values(fields[1], 0, 23),
+            "day": _cron_field_values(fields[2], 1, 31),
+            "month": _cron_field_values(fields[3], 1, 12),
+            "dow": _cron_field_values(fields[4], 0, 7),  # 0 and 7 are Sunday
+        }
+    raise ValueError(f"unsupported schedule: {schedule!r}")
+
+
 class _FallbackScheduler:
     """Minimal standard-library scheduler used when APScheduler is absent."""
 
@@ -136,12 +179,20 @@ class _FallbackScheduler:
         self.paths = paths
         self._stop = threading.Event()
         self._thread: threading.Thread | None = None
-        schedule = str(config.get("fetch", {}).get("schedule", "07:30"))
-        try:
-            hour, minute = schedule.split(":", 1)
-            self.daily_hour, self.daily_minute = int(hour), int(minute)
-        except ValueError:
-            self.daily_hour, self.daily_minute = 7, 30
+        self.schedule = parse_schedule(str(config.get("fetch", {}).get("schedule", "0 2 * * 1")))
+
+    def _matches(self, now: datetime) -> bool:
+        if self.schedule["kind"] == "daily":
+            return now.hour == self.schedule["hour"] and now.minute == self.schedule["minute"]
+        # cron: 0/7=Sunday, 1=Monday ... 6=Saturday; datetime: Monday=0.
+        python_dows = {0 if d in (0, 7) else d - 1 for d in self.schedule["dow"]}
+        return (
+            now.minute in self.schedule["minute"]
+            and now.hour in self.schedule["hour"]
+            and now.day in self.schedule["day"]
+            and now.month in self.schedule["month"]
+            and now.weekday() in python_dows
+        )
 
     def _daily(self):
         logger.info("daily pipeline started (fallback scheduler)")
@@ -161,12 +212,13 @@ class _FallbackScheduler:
             logger.exception("task loop failed")
 
     def _run(self):
-        last_daily = None
+        last_daily_minute = None
         last_tasks = 0.0
-        while not self._stop.wait(10):
+        while not self._stop.wait(20):
             now = datetime.now()
-            if last_daily != now.date() and (now.hour, now.minute) >= (self.daily_hour, self.daily_minute):
-                last_daily = now.date()
+            due_key = now.strftime("%Y-%m-%d %H:%M")
+            if last_daily_minute != due_key and self._matches(now):
+                last_daily_minute = due_key
                 self._daily()
                 last_tasks = time.time()
             elif time.time() - last_tasks >= 300:
@@ -196,10 +248,10 @@ def build_scheduler(config: dict, conn, paths: PaperPaths):
         return _FallbackScheduler(conn, config, paths)
 
     scheduler = BackgroundScheduler()
-    schedule = str(config.get("fetch", {}).get("schedule", "07:30"))
-    if ":" in schedule:
-        hour, minute = schedule.split(":", 1)
-        trigger = CronTrigger(hour=int(hour), minute=int(minute))
+    schedule = str(config.get("fetch", {}).get("schedule", "0 2 * * 1"))
+    parsed = parse_schedule(schedule)
+    if parsed["kind"] == "daily":
+        trigger = CronTrigger(hour=parsed["hour"], minute=parsed["minute"])
     else:
         trigger = CronTrigger.from_crontab(schedule)
 
@@ -243,6 +295,7 @@ __all__ = [
     "run_daily_pipeline",
     "run_task_loop",
     "check_disk_policy",
+    "parse_schedule",
     "build_scheduler",
     "main_loop",
 ]
