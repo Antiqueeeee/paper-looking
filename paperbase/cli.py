@@ -196,6 +196,8 @@ def cmd_worker(args) -> int:
         report = worker_mod.run_daily_pipeline(conn, config, paths)
         import json as _json
         print(_json.dumps(report, ensure_ascii=False, default=str)[:6000])
+        drained = worker_mod.run_task_loop(conn, config, paths)
+        print(f"processed {drained} queued task(s)")
         return 0
     if args.loop:
         worker_mod.main_loop(config, paths)

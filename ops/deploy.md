@@ -31,16 +31,21 @@ sudo chmod 600 /opt/paper/.env
 
 也可以使用 systemd 的 `EnvironmentFile=/etc/paper.env`，两种方式二选一。
 
-## 3. systemd 服务
+## 3. systemd 服务（按需运行，无常驻 worker）
 
 ```bash
-sudo cp ops/paper-web.service ops/paper-worker.service /etc/systemd/system/
+sudo cp ops/paper-web.service ops/paper-worker.service ops/paper-worker.timer /etc/systemd/system/
 # 若使用 /etc/paper.env 方式，在 [Service] 段加入：
 # EnvironmentFile=/etc/paper.env
 # 若使用 /opt/paper/.env，则无需修改 service 文件。
 sudo systemctl daemon-reload
-sudo systemctl enable --now paper-web paper-worker
+sudo systemctl enable --now paper-web          # Web 常驻（访问页面需要）
+sudo systemctl enable --now paper-worker.timer # 每周一 02:00 一次性抓取
 ```
+
+- 在页面点“想读”或上传 PDF 后，Web 服务会**按需在后台启动任务处理**，跑完即停。
+- 手动处理积压任务：`./venv/bin/python -m paperbase.cli worker`
+- 不需要再运行 `worker --loop` 常驻进程。
 
 访问方式：服务只监听 `127.0.0.1:8000`，不对公网开端口。
 

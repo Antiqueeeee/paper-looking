@@ -125,6 +125,9 @@ DEFAULTS: dict[str, Any] = {
         "tool_output_chars": 12000,
         "corpus_readonly": True,
     },
+    "worker": {
+        "on_demand": True,
+    },
     "budgets": {
         "translate_daily_tokens": 5_000_000,
         "translate_monthly_tokens": 100_000_000,

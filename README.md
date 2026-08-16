@@ -31,10 +31,10 @@ paper web --port 8000
 # 4. 手动上传一篇 PDF
 paper upload path/to/paper.pdf
 
-# 5. 处理解析/翻译任务
+# 5. 处理解析/翻译任务（Web 页面会自动按需处理；也可手动执行）
 export MINERU_API_KEY=...
-export OPENAI_API_KEY=...
-paper worker --once
+export DEEPSEEK_API_KEY=...
+paper worker
 
 # 6. 问 AI
 paper ask "这篇论文的方法是什么？" --paper <paper_id>

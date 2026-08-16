@@ -3,13 +3,15 @@ from __future__ import annotations
 
 import html as html_mod
 import json
+import logging
 import os
+import threading
 import shutil
 import tempfile
 from pathlib import Path
 from typing import Any
 
-from fastapi import Depends, FastAPI, File, Form, HTTPException, UploadFile
+from fastapi import BackgroundTasks, Depends, FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.responses import HTMLResponse
 from pydantic import BaseModel, Field
 
@@ -26,8 +28,34 @@ from paperbase.db import (
 )
 from paperbase.paths import PaperPaths
 
+_drain_lock = threading.Lock()
+
+
 def _index_html() -> str:
     return (Path(__file__).with_name("index.html")).read_text(encoding="utf-8")
+
+
+def _drain_queued_tasks(config_path: str | None) -> None:
+    """On-demand task processing: run once in a background thread, then exit."""
+    if not _drain_lock.acquire(blocking=False):
+        return
+    conn = None
+    try:
+        config = load_config(config_path)
+        paths = PaperPaths(config["paths"]["data_dir"])
+        paths.ensure_dirs()
+        conn = init_db(paths.db_path)
+        from paperbase.pipeline.worker import run_task_loop
+
+        processed = run_task_loop(conn, config, paths)
+        if processed:
+            logging.getLogger("paperbase.web").info("on-demand worker processed %s task(s)", processed)
+    except Exception:
+        logging.getLogger("paperbase.web").exception("on-demand worker failed")
+    finally:
+        if conn is not None:
+            conn.close()
+        _drain_lock.release()
 
 
 def _status_widget(paper: dict) -> str:
@@ -257,16 +285,19 @@ def create_app(config_path: str | None = None) -> FastAPI:
         return {"total": len(items), "items": items}
 
     @app.post("/api/queue")
-    def queue(body: QueueBody, res=Depends(resources)):
-        _, _, conn = res
+    def queue(body: QueueBody, background_tasks: BackgroundTasks, res=Depends(resources)):
+        config, _, conn = res
         from paperbase.pipeline.digest import queue_papers
 
         queued = queue_papers(conn, body.ids)
+        if queued and config.get("worker", {}).get("on_demand", True):
+            background_tasks.add_task(_drain_queued_tasks, config_path)
         return {"queued": queued}
 
     @app.post("/api/upload")
     async def upload(
         file: UploadFile = File(...),
+        background_tasks: BackgroundTasks = None,
         paper_id: str = Form(""),
         title: str = Form(""),
         doi: str = Form(""),
@@ -303,6 +334,8 @@ def create_app(config_path: str | None = None) -> FastAPI:
             )
         finally:
             shutil.rmtree(tmp.parent, ignore_errors=True)
+        if config.get("worker", {}).get("on_demand", True):
+            background_tasks.add_task(_drain_queued_tasks, config_path)
         return paper
 
     @app.get("/api/tags")

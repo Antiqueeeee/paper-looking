@@ -12,7 +12,10 @@ from paperbase.paths import PaperPaths
 def client(tmp_path):
     data_dir = tmp_path / "data"
     cfg_path = tmp_path / "config.toml"
-    cfg_path.write_text(f'[paths]\ndata_dir = "{data_dir}"\n', encoding="utf-8")
+    cfg_path.write_text(
+        f'[paths]\ndata_dir = "{data_dir}"\n[worker]\non_demand = false\n',
+        encoding="utf-8",
+    )
     # Pre-populate DB used by the app.
     paths = PaperPaths(data_dir)
     paths.ensure_dirs()

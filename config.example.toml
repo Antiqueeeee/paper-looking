@@ -78,6 +78,9 @@ max_tool_calls = 30                 # 单次全库问答工具调用上限
 tool_output_chars = 12000           # 单次工具输出截断字符数
 corpus_readonly = true
 
+[worker]
+on_demand = true                    # 点“想读”/上传后由 Web 服务按需处理任务
+
 [budgets]
 translate_daily_tokens = 5000000
 translate_monthly_tokens = 100000000
