@@ -37,7 +37,7 @@ def client(tmp_path):
 def test_index_and_digest_pages(client):
     r = client.get("/")
     assert r.status_code == 200
-    assert "今日早报" in r.text
+    assert "本周早报" in r.text
     assert "/static/style.css" in r.text
     assert "论文库" in r.text
     assert "全部标签" in r.text

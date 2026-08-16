@@ -13,33 +13,35 @@
 <header class="topbar">
   <div class="brand">📚 PaperBase</div>
   <nav>
-    <button class="active" onclick="show('digest')">今日早报</button>
-    <button onclick="show('papers')">论文库</button>
+    <button class="active" onclick="show('papers')">论文库</button>
     <button onclick="show('queue')">阅读队列</button>
     <button onclick="show('upload')">上传</button>
-    <button onclick="show('stats')">统计</button>
+    <button onclick="show('digest')">本周早报</button>
   </nav>
 </header>
 <main class="container">
-  <section id="digest" class="view active">
+  <section id="digest" class="view">
     <div class="card">
-      <div class="row"><h2 style="margin:0;flex:1">今日早报</h2><button class="btn" onclick="loadDigest()">刷新早报</button><a href="/digest" target="_blank"><button class="ghost">网页版早报</button></a></div>
-      <p class="hint">每周一 02:00 自动抓取，03:00 前生成。也可以在服务器执行 <code>paper today</code>。</p>
+      <h2>本周早报</h2>
+      <p class="hint">每周一 02:00 自动抓取，03:00 前生成。</p>
       <pre id="digestText" class="light">加载中…</pre>
     </div>
   </section>
 
-  <section id="papers" class="view">
+  <section id="papers" class="view active">
     <div class="card">
       <div class="row">
-        <input id="q" placeholder="标题 / 摘要关键词">
+        <input id="q" placeholder="搜索标题或摘要">
         <select id="tag"><option value="">全部标签</option></select>
-        <select id="year"><option value="">全部年份</option></select>
-        <select id="source"><option value="">全部来源</option></select>
-        <select id="status"><option value="">全部状态</option><option value="new">新收录</option><option value="in_queue">待读队列</option><option value="reading">在读</option><option value="done">已读</option><option value="later">稍后</option></select>
       </div>
-      <div class="actions"><button class="btn" onclick="searchPapers()">搜索</button><button class="ghost" onclick="searchPapers()">刷新</button></div>
-      <p class="hint">说明：“想读这篇”会加入阅读队列，系统随后自动下载 PDF（如可获取）、解析并翻译全文。</p>
+      <details class="hint">
+        <summary>更多筛选</summary>
+        <div class="row" style="margin-top:.5rem">
+          <select id="year"><option value="">全部年份</option></select>
+          <select id="source"><option value="">全部来源</option></select>
+          <select id="status"><option value="">全部状态</option><option value="new">新收录</option><option value="in_queue">待读队列</option><option value="reading">在读</option><option value="done">已读</option><option value="later">稍后</option></select>
+        </div>
+      </details>
       <p class="hint" id="searchMeta"></p>
       <div id="paperList"></div>
     </div>
@@ -58,21 +60,21 @@
       <h2>上传 PDF</h2>
       <input type="file" id="pdfFile" accept="application/pdf"><br><br>
       <input id="uploadTitle" placeholder="论文标题（推荐）">
-      <input id="uploadDoi" placeholder="DOI，例如 10.1145/xxxxxxx（可选）">
-      <input id="uploadVenue" placeholder="期刊 / 会议名称（可选）">
-      <input id="uploadIssn" placeholder="ISSN（可选）">
-      <input id="uploadYear" placeholder="年份，例如 2026（可选）">
-      <input id="uploadAuthors" placeholder="作者，多个用逗号分隔（可选）">
-      <input id="uploadTags" placeholder="标签，多个用逗号分隔，例如 rag,kbqa（可选）">
-      <input id="uploadPaperId" placeholder="已有论文 ID（通常留空，系统按 DOI/标题自动匹配）"><br><br>
+      <details class="hint">
+        <summary>更多信息（可选）</summary>
+        <input id="uploadDoi" placeholder="DOI，例如 10.1145/xxxxxxx">
+        <input id="uploadVenue" placeholder="期刊 / 会议名称">
+        <input id="uploadIssn" placeholder="ISSN">
+        <input id="uploadYear" placeholder="年份，例如 2026">
+        <input id="uploadAuthors" placeholder="作者，多个用逗号分隔">
+        <input id="uploadTags" placeholder="标签，多个用逗号分隔，例如 rag,kbqa">
+        <input id="uploadPaperId" placeholder="已有论文 ID（通常留空，系统按 DOI/标题自动匹配）">
+      </details><br>
       <button class="btn" onclick="uploadPdf()">上传并加入解析队列</button>
       <pre id="uploadResult" class="light" style="display:none"></pre>
     </div>
   </section>
 
-  <section id="stats" class="view">
-    <div class="card"><h2>库统计</h2><div id="statsBox" class="muted">加载中…</div></div>
-  </section>
 </main>
 <div id="toast"></div>
 <script>
@@ -80,12 +82,11 @@ const $=id=>document.getElementById(id);
 function show(name){
   document.querySelectorAll('.view').forEach(v=>v.classList.remove('active'));
   document.querySelectorAll('nav button').forEach((b,i)=>b.classList.toggle('active', b.textContent.trim()===({
-    digest:'今日早报',papers:'论文库',queue:'阅读队列',upload:'上传',stats:'统计'}[name])));
+    digest:'本周早报',papers:'论文库',queue:'阅读队列',upload:'上传'}[name])));
   $(name).classList.add('active');
   if(name==='digest')loadDigest();
   if(name==='papers'){loadFacets();searchPapers();}
   if(name==='queue')loadQueue();
-  if(name==='stats')loadStats();
 }
 function toast(m){const t=$('toast');t.textContent=m;t.style.display='block';setTimeout(()=>t.style.display='none',2600)}
 async function j(url,opts={}){const r=await fetch(url,opts);if(!r.ok){const e=await r.text();throw new Error(e||r.status)}return r.json()}
@@ -188,18 +189,7 @@ async function loadQueue(){
       </div>`}).join('') || '<p class="muted">阅读队列是空的。去论文库点“想读：自动解析+翻译”。</p>';
   }catch(e){$('queueList').innerHTML='加载失败：'+esc(e.message)}
 }
-async function loadStats(){
-  try{const d=await j('/api/stats');const rows=o=>Object.entries(o||{}).map(([k,v])=>`<tr><td>${esc(k)}</td><td>${v}</td></tr>`).join('');
-    const table=(title,obj)=>`<h4>${title}</h4><div class="table-wrap"><table>${rows(obj)}</table></div>`;
-    $('statsBox').innerHTML=`<h3>总数：${d.papers}</h3>
-      ${table('来源',d.by_source)}
-      ${table('年份',d.by_year)}
-      ${table('阅读状态',d.by_status)}
-      ${table('PDF 状态',d.by_pdf_status)}
-      ${table('解析状态',d.by_parse_status)}
-      ${table('标签',d.by_tag)}`}
-  catch(e){$('statsBox').textContent=e.message}
-}
-loadDigest();
+loadFacets();
+searchPapers();
 </script>
 </body></html>
