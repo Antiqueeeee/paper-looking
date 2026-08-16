@@ -19,7 +19,29 @@ from paperbase.paths import PaperPaths
 from paperbase.pipeline.translate import make_llm_client
 
 CONF_RE = re.compile(r"Confidence\s*[:：]\s*(\d{1,3})")
-CITE_RE = re.compile(r"\[([^\]\n:]+):(\d+)\]")
+CITE_RE = re.compile(r"\[([^\]\n:]+):([0-9][0-9,\s\-–]*)\]")
+
+
+def parse_citations(text: str) -> list[str]:
+    """Extract normalized citations, supporting [path:3], [path:3, 7] and ranges."""
+    out: list[str] = []
+    for m in CITE_RE.finditer(text):
+        path = m.group(1).strip()
+        nums = m.group(2).replace("–", "-")
+        for token in re.split(r"[,，]", nums):
+            token = token.strip()
+            if not token:
+                continue
+            range_match = re.fullmatch(r"(\d+)\s*-\s*(\d+)", token)
+            if range_match:
+                citation = f"[{path}:{range_match.group(1)}-{range_match.group(2)}]"
+            elif re.fullmatch(r"\d+", token):
+                citation = f"[{path}:{token}]"
+            else:
+                continue
+            if citation not in out:
+                out.append(citation)
+    return out
 
 
 @dataclass
@@ -187,7 +209,7 @@ class DCIQAAgent:
         return papers, system, ""
 
     def _build_answer(self, mode, question, text, paper_ids, usage, steps):
-        citations = [f"[{m.group(1)}:{m.group(2)}]" for m in CITE_RE.finditer(text)]
+        citations = parse_citations(text)
         conf_match = CONF_RE.search(text)
         confidence = float(conf_match.group(1)) / 100.0 if conf_match else None
         return QAAnswer(

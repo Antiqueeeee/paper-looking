@@ -203,8 +203,21 @@ def ingest_uploaded_pdf(
 
 
 def create_pdf_pipeline_tasks(conn, paper: dict) -> None:
-    """After queueing a paper, create the first appropriate PDF task."""
+    """After queueing a paper, create the next appropriate pipeline task."""
     pid = paper["id"]
+
+    # Already parsed: go straight to full translation when missing.
+    if paper.get("parse_status") == "done" and paper.get("md_path"):
+        if paper.get("translate_status") != "done":
+            enqueue_task(
+                conn,
+                paper_id=pid,
+                task_type="translate_full",
+                payload={"md_path": paper["md_path"]},
+                input_hash=content_hash("translate_full", paper["md_path"]),
+            )
+        return
+
     if paper.get("pdf_url"):
         enqueue_task(
             conn,
