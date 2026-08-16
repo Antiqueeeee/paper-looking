@@ -619,16 +619,14 @@ def create_app(config_path: str | None = None) -> FastAPI:
         paper_id_json = json.dumps(paper["id"], ensure_ascii=False)
         ask_panel = f"""
         <details id="ask" class="ask-panel" open>
-          <summary>🤖 连续提问</summary>
+          <summary>🤖 连续提问（含历史问答）</summary>
           <div id="chat" class="qa-chat"></div>
           <textarea id="question" rows="3" placeholder="先问一个问题，然后可以继续追问：比如“那它和 BRAT 的区别呢？”"></textarea>
           <button class="btn" onclick="askThisPaper()">发送</button>
         </details>
         <script>
         const PAPER_ID = {paper_id_json};
-        const SESSION_KEY = 'paperbase-qa-session-' + PAPER_ID;
-        let sessionHistory = [];
-        try {{ sessionHistory = JSON.parse(localStorage.getItem(SESSION_KEY) || '[]'); }} catch(e) {{ sessionHistory = []; }}
+        let allTurns = [];
         function citeLinks(list) {{
           return (list || []).map(c => {{
             const m = c.match(/^\\[([^:\\]]+):([0-9]+(?:-[0-9]+)?)\\]$/);
@@ -647,6 +645,7 @@ def create_app(config_path: str | None = None) -> FastAPI:
           const label = document.createElement('div');
           label.className = 'chat-label';
           label.textContent = role === 'user' ? '我' : 'AI';
+          wrap.appendChild(label);
           if (html) {{
             const body = document.createElement('div');
             body.className = 'md-body';
@@ -669,43 +668,20 @@ def create_app(config_path: str | None = None) -> FastAPI:
           const box = document.getElementById('chat');
           if (!box) return;
           box.innerHTML = '';
-          (sessionHistory || []).forEach(t => {{
-            box.appendChild(chatBubble('user', t.question, [], ''));
-            box.appendChild(chatBubble('ai', t.answer, t.citations || [], t.answer_html || ''));
+          const turns = (allTurns || []).slice().reverse();
+          turns.forEach(item => {{
+            box.appendChild(chatBubble('user', item.question, [], ''));
+            box.appendChild(chatBubble('ai', item.answer, item.citations || [], item.answer_html || ''));
           }});
-          if (!sessionHistory.length) box.innerHTML = '<p class="hint">可以连续提问：先问一个，再基于回答继续追问。</p>';
+          if (!turns.length) box.innerHTML = '<p class="hint">还没有人问过这篇论文。你可以问第一个问题，并连续追问。</p>';
         }}
         async function loadQaHistory() {{
-          const box = document.getElementById('qaHistory');
-          if (!box) return;
           try {{
             const r = await fetch('/api/qa?paper_id=' + encodeURIComponent(PAPER_ID));
             if (!r.ok) return;
             const d = await r.json();
-            box.innerHTML = '';
-            (d.items || []).forEach((item, idx) => {{
-              const details = document.createElement('details');
-              details.className = 'qa-item';
-              const summary = document.createElement('summary');
-              const when = (item.created_at || '').slice(0, 16).replace('T', ' ');
-              summary.textContent = 'Q' + (idx + 1) + ' · ' + item.question + ' · ' + Math.round((item.confidence || 0) * 100) + '%' + (when ? ' · ' + when : '');
-              details.appendChild(summary);
-              const pre = document.createElement('div');
-              pre.className = 'md-body';
-              pre.innerHTML = item.answer_html || '';
-              const cites = document.createElement('div');
-              cites.className = 'cites';
-              cites.innerHTML = citeLinks(item.citations);
-              details.appendChild(pre);
-              details.appendChild(cites);
-              box.appendChild(details);
-            }});
-            if (!d.items.length) box.innerHTML = '<p class="hint">还没有人问过这篇论文，问第一个问题吧。</p>';
-            const panel = document.getElementById('qaHistoryPanel');
-            if (panel) {{
-              const s = panel.querySelector('summary');
-              if (s) s.textContent = '💬 历史问答（' + (d.items || []).length + '）';
-            }}
+            allTurns = d.items || [];
+            renderChat();
           }} catch (e) {{}}
         }}
         async function askThisPaper() {{
@@ -713,30 +689,24 @@ def create_app(config_path: str | None = None) -> FastAPI:
           if (!q) {{ alert('请输入问题'); return; }}
           document.getElementById('question').value = '';
           const chat = document.getElementById('chat');
-          chat.innerHTML = '';
-          chat.appendChild(chatBubble('user', q, []));
-          const waiting = chatBubble('ai', '检索中，请稍候…', []);
+          chat.appendChild(chatBubble('user', q, [], ''));
+          const waiting = chatBubble('ai', '检索中，请稍候…', [], '');
           chat.appendChild(waiting);
+          const context = allTurns.slice(0, 6).map(t => ({{question: t.question, answer: t.answer}}));
           try {{
             const r = await fetch('/api/ask', {{
               method: 'POST',
               headers: {{'Content-Type': 'application/json'}},
-              body: JSON.stringify({{question: q, mode: 'paper', paper_ids: [PAPER_ID], history: sessionHistory.slice(-6)}})
+              body: JSON.stringify({{question: q, mode: 'paper', paper_ids: [PAPER_ID], history: context}})
             }});
             if (!r.ok) throw new Error(await r.text());
             const d = await r.json();
-            const ansText = d.answer;
-            chat.replaceChild(chatBubble('ai', ansText, d.citations, d.answer_html || ''), waiting);
-            sessionHistory.push({{question: q, answer: d.answer, answer_html: d.answer_html || '', citations: d.citations || []}});
-            sessionHistory = sessionHistory.slice(-10);
-            try {{ localStorage.setItem(SESSION_KEY, JSON.stringify(sessionHistory)); }} catch(e) {{}}
-            loadQaHistory();
+            await loadQaHistory();
           }} catch (e) {{
-            chat.replaceChild(chatBubble('ai', '提问失败：' + e.message, []), waiting);
+            chat.replaceChild(chatBubble('ai', '提问失败：' + e.message, [], ''), waiting);
             loadQaHistory();
           }}
         }}
-        renderChat();
         if (document.readyState === 'loading') {{
           document.addEventListener('DOMContentLoaded', loadQaHistory);
         }} else {{
@@ -760,10 +730,6 @@ def create_app(config_path: str | None = None) -> FastAPI:
             + "</div></header>"
             f"<main class='container'><div class='card'><h1>{html_mod.escape(paper['title'])}</h1>"
             f"<p>{_status_widget(paper)}</p>{ask_panel}"
-            "<details id='qaHistoryPanel' class='qa-section' open>"
-            "<summary>💬 历史问答（所有人可见，可复用）</summary>"
-            "<p class='hint'>当前为单用户版本，问答默认匿名共享；将来账号体系下可显示提问者，或选择“仅自己可见”。</p>"
-            "<div id='qaHistory' class='qa-history'></div></details>"
             f"<div class='reader-body'>{body_html}</div></div></main>"
             "</body></html>"
         )
