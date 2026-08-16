@@ -13,6 +13,7 @@ from typing import Any
 
 from fastapi import BackgroundTasks, Depends, FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.responses import HTMLResponse
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
 from paperbase.config import load_config
@@ -109,6 +110,11 @@ class PatchPaper(BaseModel):
 
 def create_app(config_path: str | None = None) -> FastAPI:
     app = FastAPI(title="PaperBase", version="0.1.0")
+    app.mount(
+        "/static",
+        StaticFiles(directory=str(Path(__file__).with_name("static"))),
+        name="static",
+    )
 
     def resources():
         config = load_config(config_path)
@@ -130,18 +136,25 @@ def create_app(config_path: str | None = None) -> FastAPI:
         digest_dir = paths.root / "digests"
         files = sorted(digest_dir.glob("*.md"), reverse=True) if digest_dir.exists() else []
         if not files:
-            return "<html><body><h1>暂无早报</h1><p>先在服务器运行 <code>paper today</code></p></body></html>"
+            return (
+                "<html><head><link rel='stylesheet' href='/static/style.css'></head><body>"
+                "<header class='topbar one-line'><div class='brand'>📚 PaperBase</div>"
+                "<div class='nav-links'><a class='btn ghost' href='/'>← 返回</a></div></header>"
+                "<main class='container'><div class='card'><h1>暂无早报</h1>"
+                "<p class='muted'>先在服务器运行 <code>paper today</code></p></div></main></body></html>"
+            )
         import markdown as md
 
         text = files[0].read_text(encoding="utf-8")
         body = md.markdown(text, extensions=["tables", "fenced_code"])
         return (
-            f"<html><head><meta charset='utf-8'><meta name='viewport' content='width=device-width, initial-scale=1, viewport-fit=cover'>"
-            f"<title>论文早报</title><style>body{{font-family:system-ui,sans-serif;max-width:900px;margin:auto;padding:1rem;line-height:1.6}}"
-            f"table{{border-collapse:collapse;display:block;overflow-x:auto}}td,th{{border:1px solid #ccc;padding:.35rem}}"
-            f"a{{color:#2563eb}}"
-            f"@media(max-width:640px){{body{{padding:.5rem}}h1{{font-size:1.3rem}}td,th{{padding:.3rem;font-size:.85rem}}}}"
-            f"</style></head><body><a href='/'>← 返回</a>{body}</body></html>"
+            "<html><head><meta charset='utf-8'>"
+            "<meta name='viewport' content='width=device-width, initial-scale=1, viewport-fit=cover'>"
+            "<title>论文早报</title><link rel='stylesheet' href='/static/style.css'></head><body>"
+            "<header class='topbar one-line'><div class='brand'>📚 PaperBase</div>"
+            "<div class='nav-links'><a class='btn ghost' href='/'>← 返回</a></div></header>"
+            f"<main class='container'><div class='card'><div class='reader-body'>{body}</div></div></main>"
+            "</body></html>"
         )
 
     @app.get("/api/health")
@@ -450,17 +463,13 @@ def create_app(config_path: str | None = None) -> FastAPI:
                 for i, line in enumerate(lines)
             )
             return (
-                f"<html><head><meta charset='utf-8'><meta name='viewport' content='width=device-width, initial-scale=1, viewport-fit=cover'>"
-                f"<title>{html_mod.escape(paper['title'])}</title><style>"
-                f"body{{font-family:monospace;max-width:1000px;margin:auto;padding:1rem;font-size:14px}}"
-                f"pre{{white-space:pre-wrap;overflow-x:auto}}span{{display:block;min-height:1.1em}}"
-                f"span:target{{background:#fef08a}}"
-                f".status-pill{{display:inline-block;background:#eef2ff;color:#3730a3;border-radius:99px;padding:.2rem .7rem;font-size:.85rem;margin:.3rem .5rem .3rem 0}}"
-                f".status-btn{{border:1px solid #2563eb;background:#2563eb;color:#fff;border-radius:8px;padding:.35rem .7rem;font-size:.9rem;margin-right:.4rem;cursor:pointer}}"
-                f".status-btn.ghost{{background:#fff;color:#2563eb}}"
-                f"@media(max-width:640px){{body{{padding:.5rem;font-size:12px}}}}"
-                f"</style></head><body><p><a href='/'>← 返回</a> | <a href='?raw=0&lang={lang}'>渲染版</a></p>"
-                f"<h1>{html_mod.escape(paper['title'])}</h1><p>{_status_widget(paper)}</p><pre>{body}</pre></body></html>"
+                "<html><head><meta charset='utf-8'>"
+                "<meta name='viewport' content='width=device-width, initial-scale=1, viewport-fit=cover'>"
+                f"<title>{html_mod.escape(paper['title'])}</title><link rel='stylesheet' href='/static/style.css'></head><body>"
+                "<header class='topbar one-line'><div class='brand'><a href='/'>📚 PaperBase</a></div>"
+                f"<div class='nav-links'><a class='btn ghost' href='/'>返回</a><a class='btn ghost' href='?raw=0&lang={lang}'>渲染版</a></div></header>"
+                f"<main class='container'><div class='card'><h1>{html_mod.escape(paper['title'])}</h1>"
+                f"<p>{_status_widget(paper)}</p><pre class='reader-raw'>{body}</pre></div></main></body></html>"
             )
         body_html = md.markdown(text, extensions=["tables", "fenced_code"])
         paper_id_json = json.dumps(paper["id"], ensure_ascii=False)
@@ -468,7 +477,7 @@ def create_app(config_path: str | None = None) -> FastAPI:
         <details id="ask" class="ask-panel">
           <summary>🤖 问这篇论文</summary>
           <textarea id="question" rows="3" placeholder="例如：这篇论文的核心方法是什么？实验用了哪些数据集？"></textarea>
-          <button class="ask-btn" onclick="askThisPaper()">提问</button>
+          <button class="btn" onclick="askThisPaper()">提问</button>
           <pre id="answer" class="light" style="display:none"></pre>
           <div id="citations" class="cites"></div>
         </details>
@@ -513,22 +522,18 @@ def create_app(config_path: str | None = None) -> FastAPI:
         }}
         </script>"""
         return (
-            f"<html><head><meta charset='utf-8'><meta name='viewport' content='width=device-width, initial-scale=1, viewport-fit=cover'>"
-            f"<title>{html_mod.escape(paper['title'])}</title><style>body{{font-family:serif;max-width:960px;margin:auto;padding:1rem;line-height:1.7}}"
-            f"pre{{white-space:pre-wrap;overflow-x:auto}}table{{border-collapse:collapse;display:block;overflow-x:auto}}td,th{{border:1px solid #ccc;padding:.3rem}}"
-            f"img{{max-width:100%}}"
-            f".ask-panel{{border:1px solid #c7d2fe;border-radius:12px;padding:.6rem .8rem;background:#f8faff;margin:0 0 1rem}}"
-            f".status-pill{{display:inline-block;background:#eef2ff;color:#3730a3;border-radius:99px;padding:.2rem .7rem;font-size:.85rem;margin:.3rem .5rem .3rem 0}}"
-            f".status-btn{{border:1px solid #2563eb;background:#2563eb;color:#fff;border-radius:8px;padding:.35rem .7rem;font-size:.9rem;margin-right:.4rem;cursor:pointer}}"
-            f".status-btn.ghost{{background:#fff;color:#2563eb}}"
-            f".ask-panel summary{{font-weight:700;font-size:1rem;cursor:pointer;min-height:44px;display:flex;align-items:center}}"
-            f".ask-panel textarea{{width:100%;font-size:16px;padding:.6rem;border:1px solid #cbd5e1;border-radius:8px;margin:.5rem 0}}"
-            f".ask-panel .ask-btn{{background:#2563eb;color:#fff;border:0;padding:.6rem 1rem;border-radius:8px;font-size:16px;min-height:44px}}"
-            f".ask-panel pre.light{{background:#f8fafc;border:1px solid #e2e8f0;white-space:pre-wrap;padding:.6rem;border-radius:8px;font-size:.85rem}}"
-            f".cites a{{display:inline-block;color:#2563eb;text-decoration:none;margin:.15rem .4rem .15rem 0;font-size:.85rem}}"
-            f"@media(max-width:640px){{body{{padding:.5rem;font-size:15px}}h1{{font-size:1.3rem}}td,th{{padding:.25rem;font-size:.8rem}}.ask-panel{{padding:.5rem}}}}"
-            f"</style></head><body><p><a href='/'>← 返回</a> | <a href='?lang=zh'>中文</a> | <a href='?lang=en'>English</a> | <a href='?raw=1'>原文行号</a></p>"
-            f"<h1>{html_mod.escape(paper['title'])}</h1><p>{_status_widget(paper)}</p>{ask_panel}{body_html}</body></html>"
+            "<html><head><meta charset='utf-8'>"
+            "<meta name='viewport' content='width=device-width, initial-scale=1, viewport-fit=cover'>"
+            f"<title>{html_mod.escape(paper['title'])}</title><link rel='stylesheet' href='/static/style.css'></head><body>"
+            "<header class='topbar one-line'><div class='brand'><a href='/'>📚 PaperBase</a></div>"
+            "<div class='nav-links'>"
+            f"<a class='btn ghost' href='?lang=en'>English</a>"
+            f"<a class='btn ghost' href='?lang=zh'>中文</a>"
+            f"<a class='btn ghost' href='?raw=1'>原文行号</a>"
+            "</div></header>"
+            f"<main class='container'><div class='card'><h1>{html_mod.escape(paper['title'])}</h1>"
+            f"<p>{_status_widget(paper)}</p>{ask_panel}<div class='reader-body'>{body_html}</div></div></main>"
+            "</body></html>"
         )
 
     return app
