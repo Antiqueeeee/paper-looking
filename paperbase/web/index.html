@@ -31,15 +31,16 @@
   <section id="papers" class="view active">
     <div class="card">
       <div class="row">
-        <input id="q" placeholder="搜索标题或摘要">
-        <select id="tag"><option value="">全部标签</option></select>
+        <input id="q" placeholder="搜索标题或摘要" onkeydown="if(event.key==='Enter')searchPapers()">
+        <select id="tag" onchange="searchPapers()"><option value="">全部标签</option></select>
       </div>
+      <button class="btn" onclick="searchPapers()">筛选</button>
       <details class="hint">
         <summary>更多筛选</summary>
         <div class="row" style="margin-top:.5rem">
-          <select id="year"><option value="">全部年份</option></select>
-          <select id="source"><option value="">全部来源</option></select>
-          <select id="status"><option value="">全部状态</option><option value="new">新收录</option><option value="in_queue">待读队列</option><option value="reading">在读</option><option value="done">已读</option><option value="later">稍后</option></select>
+          <select id="year" onchange="searchPapers()"><option value="">全部年份</option></select>
+          <select id="source" onchange="searchPapers()"><option value="">全部来源</option></select>
+          <select id="status" onchange="searchPapers()"><option value="">全部状态</option><option value="new">新收录</option><option value="in_queue">待读队列</option><option value="reading">在读</option><option value="done">已读</option><option value="later">稍后</option></select>
         </div>
       </details>
       <p class="hint" id="searchMeta"></p>
