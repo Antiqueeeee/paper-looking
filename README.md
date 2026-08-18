@@ -1,51 +1,65 @@
 # PaperBase
 
-个人论文库：定时获取论文、兴趣筛选、中文早报、PDF 解析、全文翻译和 DCI 全库问答。
+个人论文研究工作台：采集论文、按兴趣画像筛选、下载和解析 PDF、全文翻译，并提供带引用的论文问答。
 
-## 特性
+## 当前能力
 
-- 多源采集：ACL Anthology / OpenAlex 期刊 / arXiv（可选），增量可续跑
-- 兴趣规则匹配（kg / ie / kbqa / rag / mem 等）与每日中文早报
-- 开放 PDF 自动下载；未开放 PDF 手动上传，SHA-256 去重
-- MinerU API 解析 PDF 为 Markdown，无需本地 GPU
-- 标题摘要 + 全文翻译，带哈希缓存和每日预算熔断
-- DCI 问答：`rg` + 只读 SQLite，不依赖向量数据库，回答带 `文件:行号` 引用
-- PostgreSQL 元数据库（Docker Compose），Markdown 文件作为语料，PDF 冷热分离
-- FastAPI Web 界面 + `paper` CLI
+- PostgreSQL 元数据库，Docker Compose 一键启动；Markdown、PDF 使用持久化卷保存
+- ACL Anthology、OpenAlex、arXiv 采集器，支持增量抓取和断点状态
+- 可扩展采集插件：内置采集器通过注册表统一调用，第三方可通过 `paperbase.sources` entry point 注册
+- 可配置的兴趣画像：规则评分结合可选 LLM 复核，支持不同人的关键词、排除词和分类结果
+- PDF 自动下载、MinerU 解析、标题/摘要及全文翻译，带哈希缓存和预算限制
+- FastAPI 论文库、阅读队列、兴趣分类和研究早报界面；`paper` CLI 覆盖运维和批处理流程
 
 ## 快速开始
 
+需要 Docker Engine 和 Compose 插件：
+
 ```bash
-cp .env.example .env                 # 设置 POSTGRES_PASSWORD 和 API keys
-cp config.example.toml config.toml
+cp .env.example .env                 # 设置 POSTGRES_PASSWORD 和所需 API keys
+cp config.example.toml config.toml   # 按需调整来源、兴趣画像和模型
 docker compose up -d --build
-docker compose exec web paper fetch   # 重新抓取论文；首次启动会自动迁移 PostgreSQL
+docker compose exec web paper fetch  # 首次抓取论文；数据库会自动迁移
+```
+
+打开 <http://localhost:8000>。查看服务日志：
+
+```bash
 docker compose logs -f web worker
 ```
 
-访问 `http://localhost:8000`。生产部署使用 `docker compose pull && docker compose up -d`，并设置 `PAPERBASE_IMAGE` 为已发布的镜像。若密码含 URL 保留字符，可在 `.env` 设置完整且已编码的 `DATABASE_URL`。
+生产环境可以把 `PAPERBASE_IMAGE` 设置为已发布的镜像，然后执行
+`docker compose pull && docker compose up -d`。若数据库密码包含 URL 保留字符，
+请在 `.env` 中提供完整且已编码的 `DATABASE_URL`。
 
-## 配置
-
-复制 `config.example.toml` 为 `config.toml`，或设置 `PAPERBASE_CONFIG` 环境变量。
-
-- 推荐把密钥放在项目根目录 `.env` 文件（见 `.env.example`），启动时自动加载；也可以继续用环境变量
-- LLM 默认 DeepSeek：`.env` 中填 `DEEPSEEK_API_KEY`；切换 provider 只改 `[llm] provider`
-- MinerU：`.env` 中填 `MINERU_API_KEY`（只从环境变量/`.env` 读取）
-- 对象存储：默认本地 `filesystem`，后续可切 `oss` / `s3`
-- 每日预算、磁盘阈值均在配置中
-
-## 测试
+## 常用命令
 
 ```bash
-python -m pytest
+docker compose exec web paper fetch --sources acl arxiv
+docker compose exec web paper interest --profile research
+docker compose exec web paper stats
+docker compose exec web paper worker --once
+docker compose exec web paper ask "这篇论文的方法是什么？" --paper <paper_id>
+docker cp paper.pdf "$(docker compose ps -q web):/tmp/paper.pdf"
+docker compose exec web paper upload /tmp/paper.pdf
 ```
 
-## 部署
+`paper init --legacy-dir ...` 仅用于可选的旧 JSONL 数据迁移；新部署不需要导入 SQLite。
 
-见 [`ops/deploy.md`](ops/deploy.md)。目标配置：2C4G / 20GB VPS，SQLite + 文件系统，Tailscale 访问。
+## 配置与目录
 
-## 文档
+- `.env`：数据库密码、LLM/MinerU 密钥和部署变量；不要提交到 Git
+- `config.toml`：来源、兴趣画像、翻译、存储、预算和访问控制配置
+- `paperbase/`：应用源码；`paperbase/sources/`：采集器；`paperbase/interest/`：兴趣分类
+- `tests/`：pytest 测试；`docs/` 和 `ops/`：需求、设计与部署文档
 
-- 需求与验收：`docs/BDD.md`
-- 并行任务计划：`docs/IMPLEMENTATION_PLAN.md`
+## 开发与测试
+
+本地测试默认可使用 SQLite 临时数据库，不需要启动 PostgreSQL：
+
+```bash
+python -m pip install -e '.[dev]'
+python -m pytest -q
+```
+
+生产部署、备份和更新步骤见 [`ops/deploy.md`](ops/deploy.md)。贡献规范见 [`AGENTS.md`](AGENTS.md)。
