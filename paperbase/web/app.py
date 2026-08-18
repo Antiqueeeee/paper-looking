@@ -316,11 +316,14 @@ def create_app(config_path: str | None = None) -> FastAPI:
         venue: str = "",
         status: str = "",
         pdf_status: str = "",
+        interest_profile: str = "",
+        interest_label: str = "",
         limit: int = 20,
         offset: int = 0,
         res=Depends(resources),
     ):
-        _, _, conn = res
+        config, _, conn = res
+        profile_id = interest_profile or (config.get("interest", {}) or {}).get("default_profile", "research")
         where, params = [], []
         if q:
             where.append("(title LIKE ? OR abstract LIKE ? OR title_zh LIKE ?)")
@@ -345,17 +348,49 @@ def create_app(config_path: str | None = None) -> FastAPI:
             # Ignored papers are hidden by default; select the status to see them.
             where.append("status != 'ignored'")
         if pdf_status:
-            where.append("pdf_status=?")
+            where.append("p.pdf_status=?")
             params.append(pdf_status)
+        if interest_label:
+            where.append("d.label=?")
+            params.append(interest_label)
         clause = (" WHERE " + " AND ".join(where)) if where else ""
         limit = max(1, min(int(limit), 200))
         offset = max(0, int(offset))
-        total = conn.execute(f"SELECT COUNT(*) FROM papers{clause}", params).fetchone()[0]
+        join = " LEFT JOIN interest_decisions d ON d.paper_id=p.id AND d.profile_id=?"
+        total = conn.execute(f"SELECT COUNT(*) FROM papers p{join}{clause}", (profile_id, *params)).fetchone()[0]
         rows = conn.execute(
-            f"SELECT * FROM papers{clause} ORDER BY year DESC, venue, id LIMIT ? OFFSET ?",
-            (*params, limit, offset),
+            f"SELECT p.*, d.label AS interest_label, d.score AS interest_score, d.method AS interest_method "
+            f"FROM papers p{join}{clause} ORDER BY p.year DESC, p.venue, p.id LIMIT ? OFFSET ?",
+            (profile_id, *params, limit, offset),
         ).fetchall()
         return {"total": total, "limit": limit, "offset": offset, "items": [row_to_paper(r) for r in rows]}
+
+    @app.get("/api/interest/profiles")
+    def interest_profiles(res=Depends(resources)):
+        config, _, _ = res
+        profiles = (config.get("interest", {}) or {}).get("profiles", {}) or {}
+        return {
+            "default": (config.get("interest", {}) or {}).get("default_profile", "research"),
+            "items": [
+                {"id": pid, "name": str(value.get("name") or pid), "description": str(value.get("description") or "")}
+                for pid, value in profiles.items() if isinstance(value, dict)
+            ],
+        }
+
+    @app.post("/api/interest/classify")
+    def interest_classify(body: dict | None = None, res=Depends(resources)):
+        config, _, conn = res
+        from paperbase.interest import classify_database, profile_from_config
+
+        body = body or {}
+        profile = profile_from_config(config, body.get("profile"))
+        client = None
+        if profile.llm_enabled:
+            from paperbase.pipeline.translate import make_llm_client
+
+            client = make_llm_client(config, conn)
+        decisions = classify_database(conn, config, profile_id=profile.id, paper_ids=body.get("ids"), client=client)
+        return {"profile": profile.id, "count": len(decisions), "items": [decision.as_dict() for decision in decisions]}
 
     @app.post("/api/papers/batch-status")
     def batch_status(body: BatchStatusBody, res=Depends(resources)):

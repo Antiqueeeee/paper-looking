@@ -1,225 +1,177 @@
 <!doctype html>
 <html lang="zh-CN">
 <head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="theme-color" content="#0f172a">
-<meta name="apple-mobile-web-app-capable" content="yes">
-<meta http-equiv="Cache-Control" content="no-store, no-cache, must-revalidate">
-<title>PaperBase · 个人论文库</title>
-<link rel="stylesheet" href="/static/style.css">
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#18312f">
+  <meta http-equiv="Cache-Control" content="no-store, no-cache, must-revalidate">
+  <title>PaperBase</title>
+  <link rel="stylesheet" href="/static/style.css">
 </head>
 <body>
-<header class="topbar">
-  <div class="brand">📚 PaperBase</div>
-  <nav>
-    <button class="active" onclick="show('papers')">论文库</button>
-    <button onclick="show('queue')">阅读队列</button>
-    <button onclick="show('upload')">上传</button>
-    <button onclick="show('digest')">本周早报</button>
-  </nav>
-</header>
-<main class="container">
-  <section id="digest" class="view">
-    <div class="card">
-      <h2>本周早报</h2>
-      <p class="hint">每周一 02:00 自动抓取，03:00 前生成。</p>
-      <pre id="digestText" class="light">加载中…</pre>
-    </div>
-  </section>
+  <div class="app-shell">
+    <aside class="sidebar">
+      <a class="wordmark" href="#papers" aria-label="PaperBase 首页">
+        <span class="wordmark-mark">PB</span><span>paperbase</span>
+      </a>
+      <nav class="side-nav" aria-label="主导航">
+        <button class="nav-item active" data-view="papers"><span aria-hidden="true">□</span>论文库</button>
+        <button class="nav-item" data-view="queue"><span aria-hidden="true">≡</span>阅读队列</button>
+        <button class="nav-item" data-view="digest"><span aria-hidden="true">+</span>研究早报</button>
+        <button class="nav-item" data-view="upload"><span aria-hidden="true">↑</span>导入 PDF</button>
+      </nav>
+      <div class="sidebar-footer"><span class="pulse"></span><span>Library online</span></div>
+    </aside>
 
-  <section id="papers" class="view active">
-    <div class="card">
-      <div class="row">
-        <input id="q" placeholder="搜索标题或摘要" onkeydown="if(event.key==='Enter')searchPapers()" onchange="searchPapers()">
-        <select id="tag" onchange="searchPapers()"><option value="">全部标签</option></select>
-        <select id="year" onchange="searchPapers()"><option value="">全部年份</option></select>
-        <select id="source" onchange="searchPapers()"><option value="">全部来源</option></select>
-        <select id="status" onchange="searchPapers()"><option value="">全部状态</option><option value="new">新收录</option><option value="in_queue">待读队列</option><option value="reading">在读</option><option value="done">已读</option><option value="later">稍后</option><option value="ignored">不感兴趣</option></select>
-      </div>
-      <button id="batchModeBtn" class="ghost" onclick="toggleBatchMode()">批量选择</button>
-      <div id="batchBar" style="margin:.5rem 0;display:none">
-        <button class="ghost" onclick="selectAllPapers()">全选</button>
-        <button class="ghost" onclick="clearBatch()">取消选择</button>
-        <button class="btn" id="batchIgnoreBtn" onclick="batchIgnore()" disabled>不感兴趣（<span id="batchCount">0</span>）</button>
-      </div>
-      <p class="hint" id="searchMeta"></p>
-      <div id="paperList"></div>
-    </div>
-  </section>
+    <main class="workspace">
+      <header class="workspace-head">
+        <div><p class="eyebrow" id="viewEyebrow">RESEARCH LIBRARY</p><h1 id="viewTitle">论文库</h1></div>
+        <div class="head-actions"><button class="icon-button" id="refreshButton" title="刷新当前视图" aria-label="刷新当前视图">↻</button></div>
+      </header>
 
-  <section id="queue" class="view">
-    <div class="card">
-      <div class="row"><h2 style="margin:0;flex:1">阅读队列</h2><button class="btn" onclick="loadQueue()">刷新进度</button></div>
-      <p class="hint">这里显示你点过“想读”的论文。系统会自动下载、解析、翻译；完成后可直接阅读和提问。</p>
-      <div id="queueList"></div>
-    </div>
-  </section>
+      <section id="papers" class="view active">
+        <div class="metric-strip" aria-label="论文库概览">
+          <div class="metric"><span>全部论文</span><strong id="metricTotal">-</strong></div>
+          <div class="metric"><span>待阅读</span><strong id="metricQueue">-</strong></div>
+          <div class="metric"><span>已解析</span><strong id="metricParsed">-</strong></div>
+          <div class="metric metric-accent"><span>可继续处理</span><strong id="metricPending">-</strong></div>
+        </div>
 
-  <section id="upload" class="view">
-    <div class="card">
-      <h2>上传 PDF</h2>
-      <input type="file" id="pdfFile" accept="application/pdf"><br><br>
-      <input id="uploadTitle" placeholder="论文标题（推荐）">
-      <details class="hint">
-        <summary>更多信息（可选）</summary>
-        <input id="uploadDoi" placeholder="DOI，例如 10.1145/xxxxxxx">
-        <input id="uploadVenue" placeholder="期刊 / 会议名称">
-        <input id="uploadIssn" placeholder="ISSN">
-        <input id="uploadYear" placeholder="年份，例如 2026">
-        <input id="uploadAuthors" placeholder="作者，多个用逗号分隔">
-        <input id="uploadTags" placeholder="标签，多个用逗号分隔，例如 rag,kbqa">
-        <input id="uploadPaperId" placeholder="已有论文 ID（通常留空，系统按 DOI/标题自动匹配）">
-      </details><br>
-      <button class="btn" onclick="uploadPdf()">上传并加入解析队列</button>
-      <pre id="uploadResult" class="light" style="display:none"></pre>
-    </div>
-  </section>
+        <section class="library-toolbar" aria-label="论文筛选">
+          <label class="search-box"><span aria-hidden="true">⌕</span><input id="q" placeholder="搜索标题、摘要或关键词"></label>
+          <select id="tag" aria-label="按主题筛选"><option value="">全部主题</option></select>
+          <select id="year" aria-label="按年份筛选"><option value="">全部年份</option></select>
+          <select id="source" aria-label="按来源筛选"><option value="">全部来源</option></select>
+          <select id="status" aria-label="按状态筛选"><option value="">全部状态</option></select>
+          <button class="tool-button" id="batchModeBtn" title="批量选择论文">选择</button>
+        </section>
+        <div id="batchBar" class="batch-bar" hidden>
+          <span><b id="batchCount">0</b> 篇已选择</span>
+          <div><button class="tool-button" id="selectAllBtn">全选</button><button class="tool-button" id="clearBatchBtn">清除</button><button class="danger-button" id="batchIgnoreBtn" disabled>标记不感兴趣</button></div>
+        </div>
+        <div class="list-head"><span id="searchMeta">正在读取论文库</span><span>按年份与来源排序</span></div>
+        <div id="paperList" class="paper-list" aria-live="polite"></div>
+      </section>
 
-</main>
-<div id="toast"></div>
+      <section id="queue" class="view">
+        <div class="section-head"><div><p class="eyebrow">READING PIPELINE</p><h2>阅读队列</h2></div><button class="tool-button" id="queueRefresh">刷新进度</button></div>
+        <div id="queueList" class="queue-list" aria-live="polite"></div>
+      </section>
+
+      <section id="digest" class="view">
+        <div class="section-head"><div><p class="eyebrow">WEEKLY BRIEF</p><h2>研究早报</h2></div><button class="tool-button" id="digestRefresh">刷新</button></div>
+        <article class="digest-sheet"><pre id="digestText">正在读取早报</pre></article>
+      </section>
+
+      <section id="upload" class="view">
+        <div class="section-head"><div><p class="eyebrow">PDF INTAKE</p><h2>导入论文</h2></div></div>
+        <form id="uploadForm" class="upload-layout">
+          <label class="drop-zone" for="pdfFile"><span class="drop-symbol">↑</span><strong>选择 PDF 文件</strong><small>上传后将进入解析与翻译队列</small><input type="file" id="pdfFile" accept="application/pdf" required></label>
+          <div class="metadata-form">
+            <label>标题<input id="uploadTitle" placeholder="论文标题"></label>
+            <label>DOI<input id="uploadDoi" placeholder="10.xxxx/xxxxx"></label>
+            <label>期刊或会议<input id="uploadVenue" placeholder="例如 ACL / TKDE"></label>
+            <label>年份<input id="uploadYear" inputmode="numeric" placeholder="2026"></label>
+            <label class="span-two">作者<input id="uploadAuthors" placeholder="多个作者用逗号分隔"></label>
+            <label class="span-two">主题标签<input id="uploadTags" placeholder="例如 rag, kg"></label>
+            <details class="span-two"><summary>更多字段</summary><label>ISSN<input id="uploadIssn"></label><label>已有论文 ID<input id="uploadPaperId"></label></details>
+            <button class="primary-button span-two" type="submit">导入并开始处理</button>
+          </div>
+        </form>
+        <pre id="uploadResult" class="result-panel" hidden></pre>
+      </section>
+    </main>
+  </div>
+  <div id="toast" role="status"></div>
+
 <script>
-const $=id=>document.getElementById(id);
-function show(name){
-  document.querySelectorAll('.view').forEach(v=>v.classList.remove('active'));
-  document.querySelectorAll('nav button').forEach((b,i)=>b.classList.toggle('active', b.textContent.trim()===({
-    digest:'本周早报',papers:'论文库',queue:'阅读队列',upload:'上传'}[name])));
-  $(name).classList.add('active');
-  if(name==='digest')loadDigest();
-  if(name==='papers'){loadFacets();searchPapers();}
-  if(name==='queue')loadQueue();
-}
-function toast(m){const t=$('toast');t.textContent=m;t.style.display='block';setTimeout(()=>t.style.display='none',2600)}
-async function j(url,opts={}){const r=await fetch(url,opts);if(!r.ok){const e=await r.text();throw new Error(e||r.status)}return r.json()}
-function esc(s){return (s||'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}
+const $ = id => document.getElementById(id);
+const views = {
+  papers: ['RESEARCH LIBRARY', '论文库'], queue: ['READING PIPELINE', '阅读队列'],
+  digest: ['WEEKLY BRIEF', '研究早报'], upload: ['PDF INTAKE', '导入论文']
+};
+const labels = {
+  status: {new:'新收录', in_queue:'待读', reading:'在读', done:'已读', later:'稍后', ignored:'不感兴趣'},
+  task: {queued:'排队', running:'处理中', done:'完成', failed:'失败'},
+  pdf: {none:'无 PDF', needs_upload:'待上传', downloaded:'已下载', download_failed:'下载失败', cold:'冷存储'},
+  parse: {none:'未解析', queued:'排队', uploading:'上传中', parsing:'解析中', downloading:'下载中', done:'已解析', failed:'失败'}
+};
+let tagLabels = {}, sourceLabels = {}, currentView = 'papers';
 
-async function loadDigest(){
-  try{const d=await j('/api/digest/today');$('digestText').textContent=d.content}
-  catch(e){$('digestText').textContent='暂无早报。先在服务器运行：paper today'}
+function esc(value){ return String(value || '').replace(/[&<>"']/g, char => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[char])); }
+function label(value, map){ return map[value] || value || '-'; }
+function toast(message){ const node=$('toast'); node.textContent=message; node.classList.add('show'); setTimeout(()=>node.classList.remove('show'),2800); }
+async function api(url, options={}){ const response=await fetch(url,options); if(!response.ok) throw new Error((await response.text()) || response.status); return response.json(); }
+
+function show(name){
+  currentView=name;
+  document.querySelectorAll('.view').forEach(node=>node.classList.toggle('active',node.id===name));
+  document.querySelectorAll('.nav-item').forEach(node=>node.classList.toggle('active',node.dataset.view===name));
+  $('viewEyebrow').textContent=views[name][0]; $('viewTitle').textContent=views[name][1];
+  if(name==='papers'){ loadFacets(); loadStats(); searchPapers(); }
+  if(name==='queue') loadQueue();
+  if(name==='digest') loadDigest();
 }
-let TAG_LABELS={},SOURCE_LABELS={},STATUS_LABELS={'new':'新收录','in_queue':'待读队列','reading':'在读','done':'已读','later':'稍后','ignored':'不感兴趣'};
-function label(t,map){return map[t]||t}
+
+async function loadStats(){
+  try { const data=await api('/api/stats');
+    $('metricTotal').textContent=data.papers || 0;
+    $('metricQueue').textContent=(data.by_status.in_queue || 0)+(data.by_status.reading || 0);
+    $('metricParsed').textContent=data.by_parse_status.done || 0;
+    $('metricPending').textContent=(data.by_parse_status.none || 0)+(data.by_parse_status.failed || 0);
+  } catch(error) { toast('统计读取失败：'+error.message); }
+}
 async function loadFacets(){
-  try{
-    const d=await j('/api/facets');
-    TAG_LABELS={}; (d.tags||[]).forEach(t=>TAG_LABELS[t.value]=t.label);
-    SOURCE_LABELS={}; (d.sources||[]).forEach(s=>SOURCE_LABELS[s.value]=s.label);
-    for(const [id,vals] of [['tag',d.tags],['year',d.years],['source',d.sources]]){
-      const sel=$(id); const cur=sel.value;
-      sel.innerHTML=`<option value="">${id==='tag'?'全部标签':id==='year'?'全部年份':'全部来源'}</option>`+(vals||[]).map(v=>`<option value="${esc(v.value)}">${esc(v.label)}</option>`).join('');
-      sel.value=cur;
-    }
-  }catch(e){}
+  try { const data=await api('/api/facets');
+    tagLabels=Object.fromEntries((data.tags||[]).map(item=>[item.value,item.label]));
+    sourceLabels=Object.fromEntries((data.sources||[]).map(item=>[item.value,item.label]));
+    [['tag',data.tags,'全部主题'],['year',data.years,'全部年份'],['source',data.sources,'全部来源'],['status',data.statuses,'全部状态']].forEach(([id,items,first])=>{
+      const select=$(id), selected=select.value;
+      select.innerHTML=`<option value="">${first}</option>`+(items||[]).map(item=>`<option value="${esc(item.value)}">${esc(item.label)}</option>`).join('');
+      select.value=selected;
+    });
+  } catch(error) { toast('筛选项读取失败'); }
 }
 async function searchPapers(){
-  const p=new URLSearchParams({q:$('q').value.trim(),tag:$('tag').value.trim(),year:$('year').value.trim(),source:$('source').value.trim(),status:$('status').value,limit:'50'});
-  try{
-    const d=await j('/api/papers?'+p);
-    $('searchMeta').textContent=`共 ${d.total} 篇，显示 ${d.items.length} 篇`;
-    $('paperList').innerHTML=d.items.map(x=>{
-      const zh=x.title_zh||'';
-      const parsed=x.parse_status==='done';
-      let actions='';
-      if(parsed){
-        actions=`<a href="/reader/${encodeURIComponent(x.id)}?ask=1#ask"><button class="btn">阅读 + 提问</button></a>`;
-      }else{
-        actions=`<button class="btn" onclick="queueOne('${esc(x.id)}')">想读：自动解析+翻译</button>`;
-        if(x.pdf_status==='needs_upload') actions+=`<button class="ghost" onclick="show('upload')">去上传 PDF</button>`;
-      }
-      const titleHtml = parsed
-        ? `<a href="/reader/${encodeURIComponent(x.id)}">${esc(zh||x.title)}</a>`
-        : `<span>${esc(zh||x.title)}</span>`;
-      actions+=`<button class="ghost" onclick="ignoreOne('${esc(x.id)}')">不感兴趣</button>`;
-      return `
-      <div class="paper">
-        <label class="paper-check"><input type="checkbox" value="${esc(x.id)}" onchange="updateBatch()">选择</label>
-        <h3>${titleHtml}</h3>
-        ${zh?`<div class="zh">${esc(x.title)}</div>`:''}
-        <div class="meta">[${x.year||'?'}] ${esc(x.venue||'-')} · ${esc(label(x.source,SOURCE_LABELS))} · PDF:${esc(label(x.pdf_status,{'none':'无','needs_upload':'待上传','downloaded':'已下载','download_failed':'下载失败','cold':'冷存储'}))} · 解析:${esc(label(x.parse_status,{'none':'未解析','done':'已解析','failed':'失败'}))} · 翻译:${esc(label(x.translate_status,{'none':'未翻译','done':'已翻译','failed':'失败'}))}</div>
-        <div class="badges">${(x.tags||[]).map(t=>`<span>${esc(label(t,TAG_LABELS))}</span>`).join('')}<span class="st">${esc(label(x.status,STATUS_LABELS))}</span></div>
-        <div class="actions">${actions}</div>
-      </div>`}).join('') || '<p class="muted">没有结果</p>';
-  }catch(e){toast('搜索失败：'+e.message)}
+  const query=new URLSearchParams({q:$('q').value.trim(),tag:$('tag').value,year:$('year').value,source:$('source').value,status:$('status').value,limit:'50'});
+  try { const data=await api('/api/papers?'+query); $('searchMeta').textContent=`${data.total} 篇论文，显示 ${data.items.length} 篇`;
+    $('paperList').innerHTML=data.items.map(renderPaper).join('') || '<div class="empty-state">没有匹配的论文</div>';
+  } catch(error) { toast('论文库读取失败：'+error.message); }
 }
-function toggleBatchMode(){
-  const on=document.getElementById('papers').classList.toggle('batch-mode');
-  $('batchModeBtn').textContent=on?'退出批量选择':'批量选择';
-  $('batchBar').style.display=on?'flex':'none';
-  if(!on)clearBatch();
+function renderPaper(paper){
+  const title=paper.title_zh || paper.title, parsed=paper.parse_status==='done', tags=(paper.tags||[]).map(tag=>`<span class="tag">${esc(label(tag,tagLabels))}</span>`).join('');
+  const action=parsed
+    ? `<a class="primary-button compact" href="/reader/${encodeURIComponent(paper.id)}?ask=1#ask">阅读</a>`
+    : `<button class="primary-button compact" data-action="queue" data-id="${esc(paper.id)}">想读</button>`;
+  return `<article class="paper-row">
+    <label class="select-paper"><input type="checkbox" value="${esc(paper.id)}"><span></span></label>
+    <div class="paper-main"><div class="paper-title">${parsed?`<a href="/reader/${encodeURIComponent(paper.id)}">${esc(title)}</a>`:esc(title)}</div>
+      ${paper.title_zh?`<div class="paper-original">${esc(paper.title)}</div>`:''}
+      <div class="paper-meta">${esc(paper.year || '年份未知')} <i></i> ${esc(paper.venue || '未标注来源')} <i></i> ${esc(label(paper.source,sourceLabels))}</div>
+      <div class="tag-row">${tags}<span class="state state-${esc(paper.status)}">${esc(label(paper.status,labels.status))}</span></div>
+    </div>
+    <div class="paper-status"><span>PDF</span><b>${esc(label(paper.pdf_status,labels.pdf))}</b><span>解析</span><b>${esc(label(paper.parse_status,labels.parse))}</b></div>
+    <div class="paper-actions">${action}<button class="quiet-button" data-action="ignore" data-id="${esc(paper.id)}">忽略</button></div>
+  </article>`;
 }
-function selectedIds(){return [...document.querySelectorAll('#paperList input[type=checkbox]:checked')].map(c=>c.value)}
-function selectAllPapers(){
-  document.querySelectorAll('#paperList input[type=checkbox]').forEach(c=>c.checked=true);
-  updateBatch();
-}
-function updateBatch(){
-  const n=selectedIds().length;
-  $('batchCount').textContent=n;
-  $('batchIgnoreBtn').disabled=n===0;
-}
-function clearBatch(){
-  document.querySelectorAll('#paperList input[type=checkbox]').forEach(c=>c.checked=false);
-  updateBatch();
-}
-async function setStatuses(ids,status){
-  try{
-    await j('/api/papers/batch-status',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({ids,status})});
-    clearBatch(); searchPapers();
-  }catch(e){toast(e.message)}
-}
-function batchIgnore(){setStatuses(selectedIds(),'ignored')}
-function ignoreOne(id){setStatuses([id],'ignored')}
-async function queueOne(id){
-  try{
-    const d=await j('/api/queue',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({ids:[id]})});
-    toast('已加入阅读队列');
-    setTimeout(()=>show('queue'),500);
-  }catch(e){toast(e.message)}
-}
-async function uploadPdf(){
-  const f=$('pdfFile').files[0];if(!f){toast('请选择 PDF');return}
-  const fd=new FormData();fd.append('file',f);
-  if($('uploadPaperId').value.trim())fd.append('paper_id',$('uploadPaperId').value.trim());
-  if($('uploadTitle').value.trim())fd.append('title',$('uploadTitle').value.trim());
-  if($('uploadDoi').value.trim())fd.append('doi',$('uploadDoi').value.trim());
-  if($('uploadVenue').value.trim())fd.append('venue',$('uploadVenue').value.trim());
-  if($('uploadIssn').value.trim())fd.append('issn',$('uploadIssn').value.trim());
-  if($('uploadYear').value.trim())fd.append('year',$('uploadYear').value.trim());
-  if($('uploadAuthors').value.trim())fd.append('authors',$('uploadAuthors').value.trim());
-  if($('uploadTags').value.trim())fd.append('tags',$('uploadTags').value.trim());
-  try{const d=await j('/api/upload',{method:'POST',body:fd});$('uploadResult').style.display='block';$('uploadResult').textContent=JSON.stringify(d,null,2);toast('上传成功：'+d.id)}catch(e){toast('上传失败：'+e.message)}
-}
-const TASK_LABELS={'download_pdf':'下载PDF','parse_pdf':'解析PDF','translate_full':'全文翻译','translate_meta':'摘要翻译'};
-const TASK_STATE={'queued':'排队中','running':'处理中','done':'已完成','failed':'失败'};
-function progressOf(p){
-  const rows=[];
-  for(const [task,label] of Object.entries(TASK_LABELS)){
-    const st=p.tasks[task]||'-';
-    rows.push(`${label}:${st==='-'?'未开始':(TASK_STATE[st]||st)}`);
-  }
-  return rows.join(' · ');
-}
-async function loadQueue(){
-  try{
-    const d=await j('/api/queue');
-    $('queueList').innerHTML=d.items.map(p=>{
-      const zh=p.title_zh||'';
-      const readable=p.parse_status==='done';
-      return `
-      <div class="paper">
-        <h3>${esc(zh||p.title)}</h3>
-        ${zh?`<div class="zh">${esc(p.title)}</div>`:''}
-        <div class="meta">[${p.year||'?'}] ${esc(p.venue||'-')} · ${esc(label(p.source,SOURCE_LABELS))}</div>
-        <div class="meta">进度：${esc(progressOf(p))}</div>
-        <div class="badges"><span class="st">${esc(label(p.status,STATUS_LABELS))}</span></div>
-        <div class="actions">
-          ${readable?`<a href="/reader/${encodeURIComponent(p.id)}?ask=1#ask"><button class="btn">阅读 &amp; 提问</button></a>`:`<button class="btn" disabled>等待解析</button>`}
-          ${p.pdf_status==='needs_upload'?`<button class="ghost" onclick="show('upload')">去上传 PDF</button>`:''}
-        </div>
-      </div>`}).join('') || '<p class="muted">阅读队列是空的。去论文库点“想读：自动解析+翻译”。</p>';
-  }catch(e){$('queueList').innerHTML='加载失败：'+esc(e.message)}
-}
-loadFacets();
-searchPapers();
+function selectedIds(){ return [...document.querySelectorAll('#paperList input[type=checkbox]:checked')].map(node=>node.value); }
+function updateBatch(){ const count=selectedIds().length; $('batchCount').textContent=count; $('batchIgnoreBtn').disabled=!count; }
+function toggleBatch(){ const on=$('papers').classList.toggle('batch-mode'); $('batchBar').hidden=!on; $('batchModeBtn').textContent=on?'完成':'选择'; if(!on){ document.querySelectorAll('#paperList input').forEach(node=>node.checked=false); updateBatch(); } }
+async function setStatus(ids,status){ try { await api('/api/papers/batch-status',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({ids,status})}); toast('状态已更新'); searchPapers(); loadStats(); } catch(error){ toast(error.message); } }
+async function queueOne(id){ try { await api('/api/queue',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({ids:[id]})}); toast('已加入阅读队列'); setTimeout(()=>show('queue'),350); } catch(error){ toast(error.message); } }
+async function loadQueue(){ try { const data=await api('/api/queue'); $('queueList').innerHTML=data.items.map(renderQueue).join('') || '<div class="empty-state">阅读队列为空</div>'; } catch(error){ toast('队列读取失败：'+error.message); } }
+function renderQueue(paper){ const tasks=['download_pdf','parse_pdf','translate_full'].map(type=>`<span class="pipeline-step ${paper.tasks[type]||''}">${({download_pdf:'下载',parse_pdf:'解析',translate_full:'翻译'})[type]}<b>${label(paper.tasks[type],labels.task)}</b></span>`).join(''); const ready=paper.parse_status==='done';
+  return `<article class="queue-row"><div><div class="paper-title">${esc(paper.title_zh||paper.title)}</div><div class="paper-meta">${esc(paper.year||'年份未知')} <i></i> ${esc(paper.venue||'未标注来源')}</div><div class="pipeline">${tasks}</div></div><div class="paper-actions">${ready?`<a class="primary-button compact" href="/reader/${encodeURIComponent(paper.id)}?ask=1#ask">阅读</a>`:'<span class="waiting">处理中</span>'}</div></article>`; }
+async function loadDigest(){ try { const data=await api('/api/digest/today'); $('digestText').textContent=data.content; } catch(error){ $('digestText').textContent='暂无可用早报'; } }
+async function uploadPdf(event){ event.preventDefault(); const file=$('pdfFile').files[0]; if(!file){ return; } const form=new FormData(); form.append('file',file); [['paper_id','uploadPaperId'],['title','uploadTitle'],['doi','uploadDoi'],['venue','uploadVenue'],['issn','uploadIssn'],['year','uploadYear'],['authors','uploadAuthors'],['tags','uploadTags']].forEach(([key,id])=>{if($(id).value.trim()) form.append(key,$(id).value.trim());}); try { const data=await api('/api/upload',{method:'POST',body:form}); $('uploadResult').hidden=false; $('uploadResult').textContent=JSON.stringify(data,null,2); toast('PDF 已进入处理队列'); } catch(error){ toast('上传失败：'+error.message); } }
+
+document.querySelectorAll('.nav-item').forEach(button=>button.addEventListener('click',()=>show(button.dataset.view)));
+$('refreshButton').addEventListener('click',()=>show(currentView));
+['q','tag','year','source','status'].forEach(id=>$(id).addEventListener(id==='q'?'keydown':'change',event=>{ if(id!=='q'||event.key==='Enter') searchPapers(); }));
+$('batchModeBtn').addEventListener('click',toggleBatch); $('selectAllBtn').addEventListener('click',()=>{document.querySelectorAll('#paperList input').forEach(node=>node.checked=true);updateBatch();}); $('clearBatchBtn').addEventListener('click',()=>{document.querySelectorAll('#paperList input').forEach(node=>node.checked=false);updateBatch();}); $('batchIgnoreBtn').addEventListener('click',()=>setStatus(selectedIds(),'ignored'));
+$('paperList').addEventListener('change',event=>{if(event.target.matches('input[type=checkbox]'))updateBatch();}); $('paperList').addEventListener('click',event=>{const button=event.target.closest('button[data-action]');if(!button)return;button.dataset.action==='queue'?queueOne(button.dataset.id):setStatus([button.dataset.id],'ignored');});
+$('queueRefresh').addEventListener('click',loadQueue); $('digestRefresh').addEventListener('click',loadDigest); $('uploadForm').addEventListener('submit',uploadPdf);
+loadFacets(); loadStats(); searchPapers();
 </script>
-</body></html>
+</body>
+</html>
