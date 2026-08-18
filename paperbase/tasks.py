@@ -102,9 +102,11 @@ def claim_next_task(
     claimed: list[dict] = []
     try:
         # psycopg opens a transaction for a preceding read. Close it before
-        # explicitly opening the short task-claim transaction.
+        # starting the short claim transaction. PostgreSQL starts that
+        # transaction implicitly with the locking SELECT below.
         conn.commit()
-        conn.execute("BEGIN IMMEDIATE")
+        if getattr(conn, "backend", "sqlite") != "postgresql":
+            conn.execute("BEGIN IMMEDIATE")
         ids = [r["id"] for r in conn.execute(query, params).fetchall()]
         for task_id in ids:
             now = utcnow()
