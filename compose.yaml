@@ -1,0 +1,58 @@
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-paperbase}
+      POSTGRES_USER: ${POSTGRES_USER:-paperbase}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+
+  web:
+    build: .
+    image: ${PAPERBASE_IMAGE:-paperbase:local}
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-paperbase}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-paperbase}
+      PAPERBASE_CONFIG: /app/config.toml
+    env_file:
+      - .env
+    ports:
+      - "${PAPERBASE_PORT:-8000}:8000"
+    volumes:
+      - ./config.toml:/app/config.toml:ro
+      - paper_data:/app/data
+      - paper_files:/app/papers
+    command: ["paper", "web", "--host", "0.0.0.0", "--port", "8000"]
+
+  worker:
+    image: ${PAPERBASE_IMAGE:-paperbase:local}
+    build: .
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-paperbase}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-paperbase}
+      PAPERBASE_CONFIG: /app/config.toml
+    env_file:
+      - .env
+    volumes:
+      - ./config.toml:/app/config.toml:ro
+      - paper_data:/app/data
+      - paper_files:/app/papers
+    command: ["paper", "worker", "--loop"]
+
+volumes:
+  postgres_data:
+  paper_data:
+  paper_files:

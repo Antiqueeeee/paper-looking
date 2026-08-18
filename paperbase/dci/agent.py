@@ -6,6 +6,7 @@ import re
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from paperbase.config import database_target
 from paperbase.db import get_paper, utcnow
 from paperbase.dci.prefilter import prefilter_parsed_papers
 from paperbase.dci.prompts import (
@@ -121,6 +122,7 @@ class DCIQAAgent:
         ctx = ToolContext(
             corpus_dir=self.paths.corpus_dir(),
             db_path=self.paths.db_path,
+            database_target=database_target(self.config, self.paths.db_path),
             scope_files=scope,
             tool_output_chars=tool_output_chars,
         )
@@ -227,7 +229,7 @@ class DCIQAAgent:
         if not papers:
             return [], "", "当前论文库中没有已解析且符合问题约束的候选论文。"
         system = system_prompt_library(
-            self.paths.corpus_dir(), self.paths.db_path, _candidate_scope(self.paths, papers), mode="library"
+            self.paths.corpus_dir(), database_target(self.config, self.paths.db_path), _candidate_scope(self.paths, papers), mode="library"
         )
         return papers, system, ""
 

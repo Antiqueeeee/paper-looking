@@ -66,6 +66,11 @@ def _load_default_env_files(config_path: str | Path | None = None) -> None:
         load_env_file(Path(config_path).expanduser().parent / ".env")
 
 DEFAULTS: dict[str, Any] = {
+    "database": {
+        # Empty keeps SQLite available for test fixtures and local migration work.
+        # Docker Compose supplies DATABASE_URL in production.
+        "url": "",
+    },
     "paths": {
         "data_dir": "./data",
     },
@@ -200,4 +205,13 @@ def data_dir(config: dict) -> Path:
     return Path(config["paths"]["data_dir"]).expanduser().resolve()
 
 
-__all__ = ["DEFAULTS", "load_config", "deep_merge", "data_dir", "load_env_file"]
+def database_target(config: dict, fallback: str | Path) -> str | Path:
+    """Resolve a configured PostgreSQL URL, otherwise retain the fallback path."""
+    return (
+        os.environ.get("DATABASE_URL")
+        or (config.get("database", {}) or {}).get("url")
+        or fallback
+    )
+
+
+__all__ = ["DEFAULTS", "load_config", "deep_merge", "data_dir", "database_target", "load_env_file"]

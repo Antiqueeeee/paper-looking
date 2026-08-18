@@ -19,6 +19,7 @@ dependencies = [
     "python-multipart>=0.0.9",
     "markdown>=3.5",
     "bleach>=4.1",
+    "psycopg[binary]>=3.2",
 ]
 
 [project.scripts]

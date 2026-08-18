@@ -1,4 +1,4 @@
-"""SQLite schema, connection factory and basic paper CRUD.
+"""Database schema, connection factory and basic paper CRUD.
 
 Contract:
   * business code never executes CREATE TABLE outside this module;
@@ -8,12 +8,13 @@ Contract:
 from __future__ import annotations
 
 import json
+import re
 import sqlite3
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Iterable, Mapping
 
-SCHEMA_VERSION = 4
+SCHEMA_VERSION = 5
 
 SCHEMA_V1 = """
 CREATE TABLE IF NOT EXISTS meta (
@@ -136,24 +137,158 @@ ALTER TABLE qa_logs ADD COLUMN visibility TEXT NOT NULL DEFAULT 'public';
 ALTER TABLE qa_logs ADD COLUMN account_id INTEGER;
 """
 
+SCHEMA_V5 = """
+CREATE TABLE IF NOT EXISTS interest_decisions (
+    paper_id       TEXT NOT NULL,
+    profile_id     TEXT NOT NULL,
+    label          TEXT NOT NULL,
+    score          REAL NOT NULL DEFAULT 0,
+    matched_tags   TEXT NOT NULL DEFAULT '[]',
+    reasons        TEXT NOT NULL DEFAULT '[]',
+    method         TEXT NOT NULL DEFAULT 'rules',
+    model          TEXT NOT NULL DEFAULT '',
+    classified_at  TEXT NOT NULL,
+    PRIMARY KEY (paper_id, profile_id)
+);
+CREATE INDEX IF NOT EXISTS idx_interest_profile_label
+    ON interest_decisions(profile_id, label);
+"""
+
+
+class DatabaseConnection:
+    """Small DB-API compatibility layer for SQLite tests and PostgreSQL.
+
+    The application intentionally keeps its SQL close to the domain code. This
+    adapter accepts the existing qmark parameters and presents mapping rows for
+    both backends, while production PostgreSQL uses psycopg directly.
+    """
+
+    def __init__(self, raw, backend: str):
+        self.raw = raw
+        self.backend = backend
+
+    def execute(self, sql: str, params: Any = None):
+        if self.backend == "postgresql":
+            sql = _postgres_sql(sql)
+        return self.raw.execute(sql, () if params is None else params)
+
+    def executescript(self, script: str):
+        if self.backend == "sqlite":
+            return self.raw.executescript(script)
+        return self.raw.execute(_postgres_schema(script))
+
+    def commit(self):
+        return self.raw.commit()
+
+    def rollback(self):
+        return self.raw.rollback()
+
+    def close(self):
+        return self.raw.close()
+
+    def __enter__(self):
+        self.raw.__enter__()
+        return self
+
+    def __exit__(self, exc_type, exc, tb):
+        return self.raw.__exit__(exc_type, exc, tb)
+
+    def __getattr__(self, name: str):
+        return getattr(self.raw, name)
+
+
+def _qmark_to_pyformat(sql: str) -> str:
+    """Convert qmark parameters without touching quoted string literals."""
+    out: list[str] = []
+    quote = ""
+    i = 0
+    while i < len(sql):
+        char = sql[i]
+        if quote:
+            out.append(char)
+            if char == quote:
+                if i + 1 < len(sql) and sql[i + 1] == quote:
+                    out.append(sql[i + 1])
+                    i += 1
+                else:
+                    quote = ""
+        elif char in ("'", '"'):
+            quote = char
+            out.append(char)
+        elif char == "?":
+            out.append("%s")
+        else:
+            out.append(char)
+        i += 1
+    return "".join(out)
+
+
+def _postgres_sql(sql: str) -> str:
+    sql = re.sub(r"\bBEGIN\s+IMMEDIATE\b", "BEGIN", sql, flags=re.IGNORECASE)
+    sql = re.sub(r"\bINSERT\s+OR\s+IGNORE\s+INTO\b", "INSERT INTO", sql, flags=re.IGNORECASE)
+    if re.search(r"\bINSERT\s+INTO\s+tasks\b", sql, re.IGNORECASE) and "ON CONFLICT" not in sql.upper():
+        sql = re.sub(r"(VALUES\s*\([^;]+\))", r"\1 ON CONFLICT DO NOTHING", sql, count=1, flags=re.IGNORECASE | re.DOTALL)
+    return _qmark_to_pyformat(sql)
+
+
+def _postgres_schema(script: str) -> str:
+    script = script.replace("INTEGER PRIMARY KEY AUTOINCREMENT", "BIGSERIAL PRIMARY KEY")
+    return script
+
 
 def utcnow() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="seconds")
 
 
-def connect(db_path: str | Path) -> sqlite3.Connection:
-    """Open SQLite with WAL and sensible pragmas."""
-    conn = sqlite3.connect(str(db_path), timeout=10, check_same_thread=False)
-    conn.row_factory = sqlite3.Row
-    conn.execute("PRAGMA journal_mode=WAL")
-    conn.execute("PRAGMA busy_timeout=5000")
-    conn.execute("PRAGMA synchronous=NORMAL")
-    conn.execute("PRAGMA foreign_keys=ON")
-    return conn
+def is_postgres_target(target: str | Path) -> bool:
+    return str(target).startswith(("postgres://", "postgresql://"))
 
 
-def migrate(conn: sqlite3.Connection) -> int:
+def connect(target: str | Path) -> DatabaseConnection:
+    """Open SQLite for local tests or PostgreSQL for application deployments."""
+    if is_postgres_target(target):
+        try:
+            import psycopg
+            from psycopg.rows import dict_row
+        except ImportError as exc:
+            raise RuntimeError("PostgreSQL support requires psycopg; install paperbase with its runtime dependencies") from exc
+        raw = psycopg.connect(str(target), row_factory=dict_row)
+        return DatabaseConnection(raw, "postgresql")
+
+    path = Path(target)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    raw = sqlite3.connect(str(path), timeout=10, check_same_thread=False)
+    raw.row_factory = sqlite3.Row
+    raw.execute("PRAGMA journal_mode=WAL")
+    raw.execute("PRAGMA busy_timeout=5000")
+    raw.execute("PRAGMA synchronous=NORMAL")
+    raw.execute("PRAGMA foreign_keys=ON")
+    return DatabaseConnection(raw, "sqlite")
+
+
+def migrate(conn: DatabaseConnection) -> int:
     """Create/upgrade schema to the latest version."""
+    if conn.backend == "postgresql":
+        conn.execute(
+            "CREATE TABLE IF NOT EXISTS schema_migrations (version INTEGER PRIMARY KEY, applied_at TEXT NOT NULL)"
+        )
+        row = conn.execute("SELECT COALESCE(MAX(version), 0) AS version FROM schema_migrations").fetchone()
+        version = int(row["version"])
+        migrations = [(1, SCHEMA_V1), (2, SCHEMA_V2), (3, SCHEMA_V3), (4, SCHEMA_V4), (5, SCHEMA_V5)]
+        for migration_version, schema in migrations:
+            if version >= migration_version:
+                continue
+            if migration_version >= 3:
+                schema = schema.replace(" ADD COLUMN ", " ADD COLUMN IF NOT EXISTS ")
+            conn.executescript(schema)
+            conn.execute(
+                "INSERT INTO schema_migrations(version, applied_at) VALUES (?, ?) ON CONFLICT(version) DO NOTHING",
+                (migration_version, utcnow()),
+            )
+            version = migration_version
+        conn.commit()
+        return version
+
     version = conn.execute("PRAGMA user_version").fetchone()[0]
     if version < 1:
         conn.executescript(SCHEMA_V1)
@@ -170,15 +305,17 @@ def migrate(conn: sqlite3.Connection) -> int:
     if version < 4:
         conn.executescript(SCHEMA_V4)
         version = 4
+    if version < 5:
+        conn.executescript(SCHEMA_V5)
+        version = 5
     if version:
         conn.execute(f"PRAGMA user_version={version}")
     conn.commit()
     return version
 
 
-def init_db(db_path: str | Path) -> sqlite3.Connection:
-    Path(db_path).parent.mkdir(parents=True, exist_ok=True)
-    conn = connect(db_path)
+def init_db(target: str | Path) -> DatabaseConnection:
+    conn = connect(target)
     migrate(conn)
     return conn
 

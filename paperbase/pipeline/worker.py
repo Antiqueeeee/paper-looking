@@ -6,6 +6,7 @@ import threading
 import time
 from datetime import datetime
 from paperbase.alerts import alert_once_daily
+from paperbase.config import database_target
 from paperbase.db import init_db
 from paperbase.paths import PaperPaths
 from paperbase.pipeline.handlers import process_task
@@ -279,7 +280,7 @@ def build_scheduler(config: dict, conn, paths: PaperPaths):
 
 
 def main_loop(config: dict, paths: PaperPaths) -> None:
-    conn = init_db(paths.db_path)
+    conn = init_db(database_target(config, paths.db_path))
     # Drain anything queued before waiting for the next scheduler tick.
     try:
         processed = run_task_loop(conn, config, paths)

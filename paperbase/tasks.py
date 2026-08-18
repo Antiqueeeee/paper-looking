@@ -1,4 +1,4 @@
-"""Task queue stored in SQLite.
+"""Task queue stored in the configured relational database.
 
 The queue is intentionally simple: a single worker process consumes it, but
 claiming is transactional so multiple workers are safe too.
@@ -12,7 +12,6 @@ from __future__ import annotations
 
 import hashlib
 import json
-import sqlite3
 from typing import Any, Mapping
 
 from .db import dumps_json, utcnow
@@ -30,7 +29,7 @@ def content_hash(*parts: object) -> str:
 
 
 def enqueue_task(
-    conn: sqlite3.Connection,
+    conn,
     *,
     paper_id: str,
     task_type: str | TaskType,
@@ -48,10 +47,12 @@ def enqueue_task(
 
     cur = conn.execute(
         """
-        INSERT OR IGNORE INTO tasks(
+        INSERT INTO tasks(
             paper_id, task_type, status, payload, input_hash,
             priority, max_attempts, created_at
         ) VALUES (?, ?, 'queued', ?, ?, ?, ?, ?)
+        ON CONFLICT(paper_id, task_type, input_hash) DO NOTHING
+        RETURNING id
         """,
         (
             paper_id,
@@ -63,18 +64,21 @@ def enqueue_task(
             now,
         ),
     )
+    created = cur.fetchone()
     conn.commit()
-    if cur.lastrowid:
-        return int(cur.lastrowid)
+    if created:
+        return int(created["id"])
     row = conn.execute(
         "SELECT id FROM tasks WHERE paper_id=? AND task_type=? AND input_hash=?",
         (paper_id, task_type, input_hash),
     ).fetchone()
-    return int(row["id"]) if row else int(cur.lastrowid)
+    if row is None:
+        raise RuntimeError("failed to create or load task")
+    return int(row["id"])
 
 
 def claim_next_task(
-    conn: sqlite3.Connection,
+    conn,
     *,
     task_type: str | None = None,
     limit: int = 1,
@@ -118,7 +122,7 @@ def claim_next_task(
     return claimed
 
 
-def task_to_dict(row: sqlite3.Row) -> dict:
+def task_to_dict(row) -> dict:
     """Convert a task row into a plain dict with `payload` already parsed."""
     d = dict(row)
     try:

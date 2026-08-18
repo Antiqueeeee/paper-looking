@@ -5,7 +5,7 @@ import argparse
 import sys
 from pathlib import Path
 
-from paperbase.config import load_config
+from paperbase.config import database_target, load_config
 from paperbase.dci.agent import DCIQAAgent
 from paperbase.db import get_paper, init_db, utcnow
 from paperbase.paths import PaperPaths
@@ -22,7 +22,7 @@ def _open_db(args):
     config = load_config(args.config)
     paths = PaperPaths(config["paths"]["data_dir"])
     paths.ensure_dirs()
-    conn = init_db(paths.db_path)
+    conn = init_db(database_target(config, paths.db_path))
     return config, paths, conn
 
 
@@ -73,6 +73,24 @@ def cmd_scan(args) -> int:
     _, _, conn = _open_db(args)
     changed = apply_rules(conn, args.ids)
     print(f"tags updated: {changed} papers")
+    return 0
+
+
+def cmd_interest(args) -> int:
+    config, _, conn = _open_db(args)
+    from paperbase.interest import classify_database, profile_from_config
+
+    profile = profile_from_config(config, args.profile)
+    client = None
+    if profile.llm_enabled:
+        from paperbase.pipeline.translate import make_llm_client
+
+        client = make_llm_client(config, conn)
+    decisions = classify_database(conn, config, profile_id=profile.id, paper_ids=args.ids, client=client)
+    counts = {}
+    for decision in decisions:
+        counts[decision.label] = counts.get(decision.label, 0) + 1
+    print(f"classified: {len(decisions)} papers, profile={profile.id}, labels={counts}")
     return 0
 
 
@@ -128,6 +146,11 @@ def build_parser() -> argparse.ArgumentParser:
     p_scan = sub.add_parser("scan", help="run interest rules against papers")
     p_scan.add_argument("--ids", nargs="+", help="only these paper ids")
     p_scan.set_defaults(func=cmd_scan)
+
+    p_interest = sub.add_parser("interest", help="classify papers for a configurable interest profile")
+    p_interest.add_argument("--profile", help="profile id from [interest.profiles]")
+    p_interest.add_argument("--ids", nargs="+", help="only these paper ids")
+    p_interest.set_defaults(func=cmd_interest)
 
     p_today = sub.add_parser("today", help="generate/print today's digest")
     p_today.add_argument("--no-translate", action="store_true", help="skip metadata translation")

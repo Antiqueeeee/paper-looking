@@ -3,14 +3,13 @@
 Safety contract:
   * no shell string is ever constructed;
   * file tools are confined to the corpus root (and an optional scope);
-  * sqlite_query opens a fresh read-only connection with `mode=ro`;
+  * database_query opens a fresh connection and permits SELECT/WITH only;
   * each tool output is truncated by the caller.
 """
 from __future__ import annotations
 
 import json
 import re
-import sqlite3
 import subprocess
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -30,6 +29,7 @@ class ToolSecurityError(RuntimeError):
 class ToolContext:
     corpus_dir: Path
     db_path: Path
+    database_target: str | Path | None = None
     scope_files: list[Path] = field(default_factory=list)
     tool_output_chars: int = 12000
 
@@ -147,28 +147,41 @@ def read_file(ctx: ToolContext, path: str, start_line: int = 1, end_line: int = 
         return f"error: {exc}"
 
 
-def sqlite_query(ctx: ToolContext, sql: str) -> str:
-    """Run one read-only SELECT/WITH query against papers.db."""
+def database_query(ctx: ToolContext, sql: str) -> str:
+    """Run one read-only SELECT/WITH query against the configured metadata DB."""
     sql = (sql or "").strip().rstrip(";").strip()
     if not SELECT_RE.match(sql):
         return "error: only SELECT/WITH queries are allowed"
     if re.search(r";\s*\S", sql):
         return "error: multiple statements are not allowed"
     try:
-        uri = f"file:{ctx.db_path}?mode=ro"
-        conn = sqlite3.connect(uri, uri=True, timeout=5)
-        conn.row_factory = sqlite3.Row
+        from paperbase.db import connect, is_postgres_target
+
+        target = ctx.database_target or ctx.db_path
+        if not is_postgres_target(target):
+            import sqlite3
+
+            uri = f"file:{ctx.db_path}?mode=ro"
+            conn = sqlite3.connect(uri, uri=True, timeout=5)
+            conn.row_factory = sqlite3.Row
+        else:
+            conn = connect(target)
         cur = conn.execute(sql)
         rows = cur.fetchmany(MAX_SQL_ROWS + 1)
         cols = [d[0] for d in cur.description] if cur.description else []
         conn.close()
     except Exception as exc:
-        return f"error: sqlite query failed: {exc}"
+        return f"error: database query failed: {exc}"
 
-    out_rows = [dict(zip(cols, [r[i] for i in range(len(cols))])) for r in rows[:MAX_SQL_ROWS]]
+    out_rows = [dict(r) for r in rows[:MAX_SQL_ROWS]]
     truncated = len(rows) > MAX_SQL_ROWS
     payload = {"columns": cols, "rows": out_rows, "truncated": truncated}
     return ctx.truncate(json.dumps(payload, ensure_ascii=False, default=str))
+
+
+def sqlite_query(ctx: ToolContext, sql: str) -> str:
+    """Backward-compatible alias for the former SQLite-only tool name."""
+    return database_query(ctx, sql)
 
 
 TOOL_SPECS = [
@@ -211,8 +224,8 @@ TOOL_SPECS = [
         },
     },
     {
-        "name": "sqlite_query",
-        "description": "Run one read-only SQL query on papers metadata. Tables: papers(id,title,title_zh,abstract,abstract_zh,authors,year,venue,url,pdf_url,doi,tags,status,pdf_status,parse_status,translate_status,md_path,md_zh_path). tags is a JSON array string.",
+        "name": "database_query",
+        "description": "Run one read-only SQL query on paper metadata. Tables: papers(id,title,title_zh,abstract,abstract_zh,authors,year,venue,url,pdf_url,doi,tags,status,pdf_status,parse_status,translate_status,md_path,md_zh_path). tags is a JSON array string.",
         "parameters": {
             "type": "object",
             "properties": {"sql": {"type": "string", "description": "One SELECT or WITH query."}},
@@ -230,8 +243,8 @@ def execute_tool(name: str, arguments: dict, ctx: ToolContext) -> str:
         return read_file(ctx, str(args.get("path", "")), int(args.get("start_line", 1)), int(args.get("end_line", 200)))
     if name == "list_dir":
         return list_dir(ctx, str(args.get("path", "")), int(args.get("max_entries", 200)))
-    if name == "sqlite_query":
-        return sqlite_query(ctx, str(args.get("sql", "")))
+    if name in {"database_query", "sqlite_query"}:
+        return database_query(ctx, str(args.get("sql", "")))
     return f"error: unknown tool {name!r}"
 
 
@@ -243,5 +256,6 @@ __all__ = [
     "rg_search",
     "read_file",
     "list_dir",
+    "database_query",
     "sqlite_query",
 ]

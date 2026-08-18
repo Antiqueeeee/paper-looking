@@ -15,11 +15,63 @@ from paperbase.sources.acl import ACLSource
 from paperbase.sources.arxiv import ArxivSource
 from paperbase.sources.openalex import OpenAlexSource
 
+@dataclass(frozen=True)
+class CollectorPlugin:
+    """Metadata and factory for one independently maintained collector."""
+
+    name: str
+    builder: object
+    description: str = ""
+
+
+_PLUGINS: dict[str, CollectorPlugin] = {}
+# Kept as a compatibility view for existing integrations and tests.
 _SOURCE_BUILDERS = {}
+_EXTERNAL_LOADED = False
 
 
-def _register(name: str, builder):
+def register_source(name: str, builder, *, description: str = "") -> None:
+    plugin = CollectorPlugin(name=name, builder=builder, description=description)
+    _PLUGINS[name] = plugin
     _SOURCE_BUILDERS[name] = builder
+
+
+def available_sources() -> list[str]:
+    _ensure_external_plugins()
+    return sorted(_PLUGINS)
+
+
+def source_plugins() -> list[CollectorPlugin]:
+    _ensure_external_plugins()
+    return sorted(_PLUGINS.values(), key=lambda plugin: plugin.name)
+
+
+def _ensure_external_plugins() -> None:
+    global _EXTERNAL_LOADED
+    if not _EXTERNAL_LOADED:
+        _EXTERNAL_LOADED = True
+        load_external_plugins()
+
+
+def load_external_plugins() -> int:
+    """Load optional third-party collectors from ``paperbase.sources`` entry points."""
+    try:
+        from importlib.metadata import entry_points
+
+        entries = entry_points(group="paperbase.sources")
+    except (ImportError, TypeError):
+        entries = []
+    loaded = 0
+    for entry in entries:
+        plugin = entry.load()
+        if isinstance(plugin, CollectorPlugin):
+            register_source(plugin.name, plugin.builder, description=plugin.description)
+        elif callable(plugin):
+            register_source(entry.name, plugin)
+        else:
+            raise TypeError(f"source entry point {entry.name!r} must provide a CollectorPlugin or builder")
+        loaded += 1
+    return loaded
 
 
 def _build_acl(config: dict) -> ACLSource:
@@ -32,8 +84,8 @@ def _build_acl(config: dict) -> ACLSource:
 def _build_openalex(config: dict) -> OpenAlexSource:
     return OpenAlexSource(years=config.get("fetch", {}).get("years", []))
 
-_register("acl", _build_acl)
-_register("openalex", _build_openalex)
+register_source("acl", _build_acl, description="ACL Anthology conference proceedings")
+register_source("openalex", _build_openalex, description="OpenAlex journal works")
 
 
 def _build_arxiv(config: dict) -> ArxivSource:
@@ -44,7 +96,7 @@ def _build_arxiv(config: dict) -> ArxivSource:
         max_results=int(arxiv_cfg.get("max_results", 200)),
     )
 
-_register("arxiv", _build_arxiv)
+register_source("arxiv", _build_arxiv, description="arXiv category and keyword search")
 
 
 @dataclass
@@ -63,9 +115,10 @@ class FetchReport:
 
 
 def get_source(name: str, config: dict) -> PaperSource:
+    _ensure_external_plugins()
     builder = _SOURCE_BUILDERS.get(name)
     if builder is None:
-        raise KeyError(f"unknown source: {name!r}; available={sorted(_SOURCE_BUILDERS)}")
+        raise KeyError(f"unknown source: {name!r}; available={available_sources()}")
     return builder(config)
 
 
@@ -103,11 +156,11 @@ def fetch_source(conn, config: dict, name: str, *, since: str | None = None) -> 
     now = utcnow()
 
     cur = conn.execute(
-        "INSERT INTO fetch_runs(source, status, started_at) VALUES (?, ?, ?)",
+        "INSERT INTO fetch_runs(source, status, started_at) VALUES (?, ?, ?) RETURNING id",
         (name, FetchStatus.RUNNING.value, now),
     )
+    run_id = int(cur.fetchone()["id"])
     conn.commit()
-    run_id = int(cur.lastrowid)
 
     report = FetchReport(source=name, status=FetchStatus.RUNNING.value, before=before)
     try:
@@ -149,6 +202,11 @@ def fetch_source(conn, config: dict, name: str, *, since: str | None = None) -> 
 
 __all__ = [
     "FetchReport",
+    "CollectorPlugin",
+    "register_source",
+    "available_sources",
+    "source_plugins",
+    "load_external_plugins",
     "get_source",
     "fetch_source",
     "load_source_state",

@@ -9,7 +9,7 @@ Exact Answer: {{简洁的最终答案}}
 Confidence: {{0-100%；证据不足、模糊或缺失时必须低于 50%}}"""
 
 
-def system_prompt_library(corpus_dir: Path, db_path: Path, scope_files: list[Path], mode: str = "library") -> str:
+def system_prompt_library(corpus_dir: Path, database: str | Path, scope_files: list[Path], mode: str = "library") -> str:
     scope_desc = "\n".join(f"  - {p.name}" for p in scope_files[:80])
     if len(scope_files) > 80:
         scope_desc += f"\n  ... 共 {len(scope_files)} 个候选文件"
@@ -17,12 +17,12 @@ def system_prompt_library(corpus_dir: Path, db_path: Path, scope_files: list[Pat
 
 工作目录与工具：
 - 语料根目录：{corpus_dir}
-- 元数据库（只读 SQLite）：{db_path}
+- 元数据库（只读）：{database}
 - 本次问题的候选论文范围（只能在这些文件内搜索）：
 {scope_desc or '  （无候选文件）'}
 
 检索策略（必须遵守）：
-1. 先用 sqlite_query 查看候选论文元数据；再用 rg 做多组关键词/正则搜索，不要只搜一个词。
+1. 先用 database_query 查看候选论文元数据；再用 rg 做多组关键词/正则搜索，不要只搜一个词。
 2. 优先使用精确术语、方法名、缩写及其同义表达；用 -C 上下文定位证据。
 3. 找到线索后用 read_file 读取局部行段验证，绝不臆测。
 4. 搜索不足时反思缺口并换关键词补搜；没有证据就明确说没有，不得编造论文或行号。

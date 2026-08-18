@@ -18,7 +18,7 @@ from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Redirect
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
-from paperbase.config import load_config
+from paperbase.config import database_target, load_config
 from paperbase.db import (
     count_papers,
     get_paper,
@@ -48,7 +48,7 @@ def _drain_queued_tasks(config_path: str | None) -> None:
         config = load_config(config_path)
         paths = PaperPaths(config["paths"]["data_dir"])
         paths.ensure_dirs()
-        conn = init_db(paths.db_path)
+        conn = init_db(database_target(config, paths.db_path))
         from paperbase.pipeline.worker import run_task_loop
 
         processed = run_task_loop(conn, config, paths)
@@ -231,7 +231,7 @@ def create_app(config_path: str | None = None) -> FastAPI:
         config = load_config(config_path)
         paths = PaperPaths(config["paths"]["data_dir"])
         paths.ensure_dirs()
-        conn = init_db(paths.db_path)
+        conn = init_db(database_target(config, paths.db_path))
         try:
             yield config, paths, conn
         finally:

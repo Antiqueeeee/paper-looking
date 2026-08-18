@@ -91,6 +91,10 @@ def build_daily_digest(
         (since,),
     ).fetchall()
     apply_rules(conn, [r["id"] for r in new_rows])
+    if config.get("interest"):
+        from paperbase.interest import classify_database
+
+        classify_database(conn, config, paper_ids=[r["id"] for r in new_rows])
     matched = new_matched_papers(conn, since, limit=limit)
     result.new_total = len(matched)
     result.matched = len(matched)

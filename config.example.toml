@@ -2,6 +2,10 @@
 # Copy to config.toml (or set PAPERBASE_CONFIG=/path/to/config.toml).
 # Every key is optional; missing keys fall back to paperbase.config.DEFAULTS.
 
+[database]
+# Production Compose sets DATABASE_URL; leaving this empty keeps local SQLite tests usable.
+url = ""
+
 [paths]
 data_dir = "./data"                 # SQLite + md + pdf 的根目录
 
