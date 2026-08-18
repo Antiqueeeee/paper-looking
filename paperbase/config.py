@@ -79,6 +79,24 @@ DEFAULTS: dict[str, Any] = {
         "due_time": "03:00",
         "top_n_per_tag": 30,
     },
+    "interest": {
+        "default_profile": "research",
+        "profiles": {
+            "research": {
+                "name": "Research interests",
+                "description": "Knowledge graphs, information extraction, question answering, semantic parsing, synthetic data, RAG, multimodal RAG, and agent memory.",
+                "include_tags": ["kg", "ie", "kbqa", "sp", "ds", "rag", "mrag", "mem"],
+                "exclude_tags": [],
+                "rules": {},
+                "negative_rules": [],
+                "llm": {
+                    "enabled": False,
+                    "review_all": False,
+                    "candidate_min_matches": 1,
+                },
+            },
+        },
+    },
     "llm": {
         "provider": "deepseek",
         "base_url": "https://api.deepseek.com/v1",

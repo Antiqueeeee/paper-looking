@@ -15,6 +15,26 @@ concurrency = 4
 due_time = "03:00"                  # 周一抓取完成后早报最晚生成时间
 top_n_per_tag = 30                  # 每个标签最多展示篇数
 
+# 兴趣筛选支持多个 profile。规则阶段复用内置主题标签；可为每个 profile 增加
+# 正则规则或排除规则。开启 LLM 后，仅审核规则命中的候选，除非 review_all=true。
+[interest]
+default_profile = "research"
+
+[interest.profiles.research]
+name = "Research interests"
+description = "Knowledge graphs, information extraction, RAG, QA, and agent memory."
+include_tags = ["kg", "ie", "kbqa", "sp", "ds", "rag", "mrag", "mem"]
+exclude_tags = []
+negative_rules = []                 # 匹配时直接判为不感兴趣的正则
+
+[interest.profiles.research.rules]
+# survey = ["\\bsurvey\\b", "\\btutorial\\b"]
+
+[interest.profiles.research.llm]
+enabled = false
+review_all = false                  # true 时逐篇 AI 审核，成本更高
+candidate_min_matches = 1
+
 [arxiv]                             # 可选数据源
 categories = ["cs.CL", "cs.AI", "cs.IR"]
 keywords = ["knowledge graph", "information extraction", "question answering"]
