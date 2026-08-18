@@ -185,7 +185,10 @@ class ACLSource:
             try:
                 soup = get_bs_soup_from_url(f"https://aclanthology.org/volumes/{volume['id']}/")
                 rows = parse_volume_papers(soup, volume["id"])
-                drafts = [PaperDraft(**row, source="acl", venue=row.pop("volume"), tags=[]) for row in rows]
+                drafts = []
+                for row in rows:
+                    venue = row.pop("volume", volume["id"])
+                    drafts.append(PaperDraft(**row, source="acl", venue=venue, tags=[]))
                 return volume["id"], drafts, None
             except Exception as exc:  # per-volume failure should not abort the run
                 return volume["id"], None, f"{volume['id']}: {exc}"
