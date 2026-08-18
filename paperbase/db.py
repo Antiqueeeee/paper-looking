@@ -187,11 +187,14 @@ class DatabaseConnection:
         return self.raw.close()
 
     def __enter__(self):
-        self.raw.__enter__()
         return self
 
     def __exit__(self, exc_type, exc, tb):
-        return self.raw.__exit__(exc_type, exc, tb)
+        if exc_type is None:
+            self.commit()
+        else:
+            self.rollback()
+        return False
 
     def __getattr__(self, name: str):
         return getattr(self.raw, name)

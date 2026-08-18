@@ -6,6 +6,7 @@ import pytest
 from paperbase import config as cfg
 from paperbase import tasks
 from paperbase.db import (
+    DatabaseConnection,
     get_paper,
     init_db,
     set_note,
@@ -38,6 +39,30 @@ def test_config_defaults():
     assert c["fetch"]["schedule"] == "0 2 * * 1"  # Monday 02:00
     assert c["dci"]["max_tool_calls"] == 30
     assert c["pdf"]["hot_quota_gb"] == 6
+
+
+def test_database_connection_context_keeps_postgres_connection_open():
+    class RawConnection:
+        def __init__(self):
+            self.commits = 0
+            self.rollbacks = 0
+            self.closed = False
+
+        def commit(self):
+            self.commits += 1
+
+        def rollback(self):
+            self.rollbacks += 1
+
+        def close(self):
+            self.closed = True
+
+    raw = RawConnection()
+    conn = DatabaseConnection(raw, "postgresql")
+    with conn:
+        pass
+    assert raw.commits == 1
+    assert not raw.closed
 
 
 def test_path_contract(paths):
