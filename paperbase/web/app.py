@@ -357,7 +357,7 @@ def create_app(config_path: str | None = None) -> FastAPI:
         limit = max(1, min(int(limit), 200))
         offset = max(0, int(offset))
         join = " LEFT JOIN interest_decisions d ON d.paper_id=p.id AND d.profile_id=?"
-        total = conn.execute(f"SELECT COUNT(*) FROM papers p{join}{clause}", (profile_id, *params)).fetchone()[0]
+        total = conn.execute(f"SELECT COUNT(*) AS total FROM papers p{join}{clause}", (profile_id, *params)).fetchone()["total"]
         rows = conn.execute(
             f"SELECT p.*, d.label AS interest_label, d.score AS interest_score, d.method AS interest_method "
             f"FROM papers p{join}{clause} ORDER BY p.year DESC, p.venue, p.id LIMIT ? OFFSET ?",

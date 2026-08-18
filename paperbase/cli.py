@@ -139,7 +139,7 @@ def build_parser() -> argparse.ArgumentParser:
     p_init.set_defaults(func=cmd_init)
 
     p_fetch = sub.add_parser("fetch", help="incrementally fetch one or more sources")
-    p_fetch.add_argument("--sources", nargs="+", choices=["acl", "openalex", "arxiv"])
+    p_fetch.add_argument("--sources", nargs="+", metavar="SOURCE", help="source plugin ids (for example: acl arxiv)")
     p_fetch.add_argument("--since", help="ISO datetime lower bound (optional)")
     p_fetch.set_defaults(func=cmd_fetch)
 
@@ -299,7 +299,7 @@ def cmd_read(args) -> int:
 
 def cmd_stats(args) -> int:
     _, _, conn = _open_db(args)
-    total = conn.execute("SELECT COUNT(*) FROM papers").fetchone()[0]
+    total = conn.execute("SELECT COUNT(*) AS total FROM papers").fetchone()["total"]
     print(f"papers: {total}")
     for label, sql in [
         ("source", "SELECT source k, COUNT(*) n FROM papers GROUP BY source ORDER BY n DESC"),
@@ -309,7 +309,7 @@ def cmd_stats(args) -> int:
         ("translate_status", "SELECT translate_status k, COUNT(*) n FROM papers GROUP BY translate_status ORDER BY n DESC"),
     ]:
         print(label + ":", ", ".join(f"{r['k']}={r['n']}" for r in conn.execute(sql).fetchall()))
-    queued = conn.execute("SELECT COUNT(*) FROM tasks WHERE status='queued'").fetchone()[0]
+    queued = conn.execute("SELECT COUNT(*) AS total FROM tasks WHERE status='queued'").fetchone()["total"]
     print(f"queued_tasks: {queued}")
     return 0
 

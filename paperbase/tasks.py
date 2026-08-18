@@ -96,9 +96,14 @@ def claim_next_task(
         params.append(task_type)
     query += " ORDER BY priority ASC, created_at ASC LIMIT ?"
     params.append(limit)
+    if getattr(conn, "backend", "sqlite") == "postgresql":
+        query += " FOR UPDATE SKIP LOCKED"
 
     claimed: list[dict] = []
     try:
+        # psycopg opens a transaction for a preceding read. Close it before
+        # explicitly opening the short task-claim transaction.
+        conn.commit()
         conn.execute("BEGIN IMMEDIATE")
         ids = [r["id"] for r in conn.execute(query, params).fetchall()]
         for task_id in ids:
@@ -187,11 +192,13 @@ def cancel_task(conn: sqlite3.Connection, task_id: int) -> None:
 
 def pending_count(conn: sqlite3.Connection, task_type: str | None = None) -> int:
     if task_type:
-        return conn.execute(
-            "SELECT COUNT(*) FROM tasks WHERE status='queued' AND task_type=?",
+        row = conn.execute(
+            "SELECT COUNT(*) AS total FROM tasks WHERE status='queued' AND task_type=?",
             (task_type,),
-        ).fetchone()[0]
-    return conn.execute("SELECT COUNT(*) FROM tasks WHERE status='queued'").fetchone()[0]
+        ).fetchone()
+    else:
+        row = conn.execute("SELECT COUNT(*) AS total FROM tasks WHERE status='queued'").fetchone()
+    return int(row["total"])
 
 
 def reset_running_tasks(conn: sqlite3.Connection) -> int:

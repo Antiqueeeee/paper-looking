@@ -1,105 +1,58 @@
-# PaperBase 部署手册（2C4G / 20GB VPS）
+# PaperBase Docker 部署手册
 
-## 1. 系统准备
+## 准备
 
-```bash
-sudo useradd --create-home --system paper
-sudo mkdir -p /opt/paper
-sudo chown paper:paper /opt/paper
-sudo apt-get update && sudo apt-get install -y python3-venv python3-pip ripgrep curl unzip
-```
-
-## 2. 安装应用
+在 VPS 安装 Docker Engine 与 Compose 插件，然后克隆项目：
 
 ```bash
+sudo mkdir -p /opt/paper && sudo chown "$USER" /opt/paper
 cd /opt/paper
-python3 -m venv venv
-./venv/bin/pip install -e .            # 或直接拷贝 paperbase 目录
-cp config.example.toml config.toml     # 填写 LLM / MinerU / 对象存储
+git clone <repository-url> .
+cp .env.example .env
+cp config.example.toml config.toml
 ```
 
-设置密钥（推荐直接放在 `/opt/paper/.env`，应用启动时自动加载）：
+编辑 `.env`，至少设置高强度的 `POSTGRES_PASSWORD`，并按需填写
+`DEEPSEEK_API_KEY`、`MINERU_API_KEY`。数据库默认使用 Compose 内的 `db`
+服务。密码含 `@`、`:` 等 URL 保留字符时，在 `.env` 中设置完整、URL 编码后的
+`DATABASE_URL`。
+
+## 启动与验收
 
 ```bash
-sudo -u paper tee /opt/paper/.env >/dev/null <<'ENV'
-DEEPSEEK_API_KEY=...
-MINERU_API_KEY=...
-PAPERBASE_CONFIG=/opt/paper/config.toml
-ENV
-sudo chmod 600 /opt/paper/.env
-```
-
-也可以使用 systemd 的 `EnvironmentFile=/etc/paper.env`，两种方式二选一。
-
-## 3. systemd 服务（按需运行，无常驻 worker）
-
-```bash
-sudo cp ops/paper-web.service ops/paper-worker.service ops/paper-worker.timer /etc/systemd/system/
-# 若使用 /etc/paper.env 方式，在 [Service] 段加入：
-# EnvironmentFile=/etc/paper.env
-# 若使用 /opt/paper/.env，则无需修改 service 文件。
-sudo systemctl daemon-reload
-sudo systemctl enable --now paper-web          # Web 常驻（访问页面需要）
-sudo systemctl enable --now paper-worker.timer # 每周一 02:00 一次性抓取
-```
-
-- 在页面点“想读”或上传 PDF 后，Web 服务会**按需在后台启动任务处理**，跑完即停。
-- 手动处理积压任务：`./venv/bin/python -m paperbase.cli worker`
-- 不需要再运行 `worker --loop` 常驻进程。
-
-访问方式：服务只监听 `127.0.0.1:8000`，不对公网开端口。
-
-### 推荐：Tailscale（个人首选）
-
-```bash
-curl -fsSL https://tailscale.com/install.sh | sh
-sudo tailscale up
-# 手机/电脑安装 Tailscale 后访问：
-# http://<tailscale-ip>:8000
-```
-
-优点：无公网端口、无域名/备案要求、端到端加密、各端体验一致。
-
-### 备选：Cloudflare Tunnel（浏览器直接访问）
-
-```bash
-# 需要你有一个域名托管在 Cloudflare
-cloudflared tunnel login
-cloudflared tunnel create paperbase
-cloudflared tunnel route dns paperbase paper.example.com
-cloudflared tunnel run --url http://127.0.0.1:8000 paperbase
-```
-
-优点：手机浏览器直接打开域名，无需安装客户端；大陆访问速度需实测。
-
-### 不建议
-
-- 不建议直接对公网开放 `8000` 端口；
-- 阿里云大陆 ECS 使用 80/443 域名访问通常涉及 ICP 备案，Tailscale/Tunnel 可绕过这个流程。
-
-## 4. 初始化与验收
-
-```bash
-cd /opt/paper
-./venv/bin/python -m paperbase.cli init --legacy-dir /path/to/legacy
-./venv/bin/python -m paperbase.cli today --no-translate
-./venv/bin/python -m paperbase.cli upload paper.pdf
-./venv/bin/python -m paperbase.cli worker --once
+docker compose up -d --build
+docker compose logs -f web worker
 curl http://127.0.0.1:8000/api/health
+docker compose exec web paper fetch
 ```
 
-## 5. 备份
+首次启动会自动执行 PostgreSQL schema migration。Web 和 worker 共享数据库、
+Markdown 与 PDF 卷；不要分别手动创建数据库文件。推荐使用 Tailscale 或反向代理
+暴露 Web 服务，而不是直接公开 8000 端口。
 
-安装 Litestream 后复制 `ops/litestream.yml`，或至少每日执行：
+## 更新
+
+本地构建部署：
 
 ```bash
-sqlite3 /opt/paper/data/papers.db ".backup /backup/papers.db"
+git pull
+docker compose up -d --build
 ```
 
-PDF 冷数据由应用自动上传对象存储；Markdown 目录建议每周 `rsync` 到对象存储/另一台机器。
+已发布镜像部署：在 `.env` 设置 `PAPERBASE_IMAGE=registry.example/paperbase:tag`，然后：
 
-## 6. 磁盘策略
+```bash
+docker compose pull
+docker compose up -d
+```
 
-- 本地热 PDF 配额默认 6GB，达到后解析完成的 PDF 自动转冷。
-- 磁盘使用率 80% 告警，90% 暂停下载和全文翻译任务。
-- 20GB 磁盘下 Markdown 全文约 1 万篇占 1.5GB，无需额外处理。
+## 备份
+
+每天备份 PostgreSQL，并另行备份 Docker 卷中的 Markdown/PDF：
+
+```bash
+set -a; . ./.env; set +a
+docker compose exec -T db pg_dump -U "$POSTGRES_USER" "$POSTGRES_DB" > /backup/paperbase.sql
+```
+
+恢复时使用 `psql` 导入该文件到空数据库。更新镜像前先验证备份可读。

@@ -524,7 +524,8 @@ def set_local_file(
 
 
 def count_papers(conn: sqlite3.Connection) -> int:
-    return conn.execute("SELECT COUNT(*) FROM papers").fetchone()[0]
+    row = conn.execute("SELECT COUNT(*) AS total FROM papers").fetchone()
+    return int(row["total"])
 
 
 def get_meta(conn: sqlite3.Connection, key: str, default: str = "") -> str:

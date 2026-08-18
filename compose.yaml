@@ -22,7 +22,7 @@ services:
       db:
         condition: service_healthy
     environment:
-      DATABASE_URL: postgresql://${POSTGRES_USER:-paperbase}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-paperbase}
+      DATABASE_URL: ${DATABASE_URL:-postgresql://${POSTGRES_USER:-paperbase}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-paperbase}}
       PAPERBASE_CONFIG: /app/config.toml
     env_file:
       - .env
@@ -42,7 +42,7 @@ services:
       db:
         condition: service_healthy
     environment:
-      DATABASE_URL: postgresql://${POSTGRES_USER:-paperbase}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-paperbase}
+      DATABASE_URL: ${DATABASE_URL:-postgresql://${POSTGRES_USER:-paperbase}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-paperbase}}
       PAPERBASE_CONFIG: /app/config.toml
     env_file:
       - .env

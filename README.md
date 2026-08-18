@@ -10,41 +10,20 @@
 - MinerU API 解析 PDF 为 Markdown，无需本地 GPU
 - 标题摘要 + 全文翻译，带哈希缓存和每日预算熔断
 - DCI 问答：`rg` + 只读 SQLite，不依赖向量数据库，回答带 `文件:行号` 引用
-- SQLite(WAL) 元数据库，Markdown 文件作为语料，PDF 冷热分离
+- PostgreSQL 元数据库（Docker Compose），Markdown 文件作为语料，PDF 冷热分离
 - FastAPI Web 界面 + `paper` CLI
 
 ## 快速开始
 
 ```bash
-python3 -m venv venv && . venv/bin/activate
-pip install -e .
-
-# 1. 导入历史数据并建库
-paper init --legacy-dir ACL-Anthology-Crawler/data
-
-# 2. 建立早报基线（首日不灌历史）
-paper today --no-translate
-
-# 3. 启动 Web
-paper web --port 8000
-
-# 4. 手动上传一篇 PDF
-paper upload path/to/paper.pdf
-
-# 5. 处理解析/翻译任务（Web 页面会自动按需处理；也可手动执行）
-export MINERU_API_KEY=...
-export DEEPSEEK_API_KEY=...
-paper worker
-
-# 6. 问 AI
-paper ask "这篇论文的方法是什么？" --paper <paper_id>
-paper ask "2026 findings 里 GraphRAG 论文有哪些共同趋势？"
-
-# 其他常用命令
-paper read <paper_id>        # 查看论文元数据与 Markdown
-paper stats                 # 库统计
-paper doctor                # 环境/数据检查
+cp .env.example .env                 # 设置 POSTGRES_PASSWORD 和 API keys
+cp config.example.toml config.toml
+docker compose up -d --build
+docker compose exec web paper fetch   # 重新抓取论文；首次启动会自动迁移 PostgreSQL
+docker compose logs -f web worker
 ```
+
+访问 `http://localhost:8000`。生产部署使用 `docker compose pull && docker compose up -d`，并设置 `PAPERBASE_IMAGE` 为已发布的镜像。若密码含 URL 保留字符，可在 `.env` 设置完整且已编码的 `DATABASE_URL`。
 
 ## 配置
 

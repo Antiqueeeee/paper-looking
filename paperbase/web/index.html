@@ -39,15 +39,17 @@
 
         <section class="library-toolbar" aria-label="论文筛选">
           <label class="search-box"><span aria-hidden="true">⌕</span><input id="q" placeholder="搜索标题、摘要或关键词"></label>
-          <select id="tag" aria-label="按主题筛选"><option value="">全部主题</option></select>
+          <select id="tag" aria-label="按主题筛选"><option value="">全部标签</option></select>
           <select id="year" aria-label="按年份筛选"><option value="">全部年份</option></select>
           <select id="source" aria-label="按来源筛选"><option value="">全部来源</option></select>
           <select id="status" aria-label="按状态筛选"><option value="">全部状态</option></select>
+          <select id="interestProfile" aria-label="选择兴趣画像"><option value="">兴趣画像</option></select>
+          <select id="interestLabel" aria-label="按兴趣结果筛选"><option value="">全部兴趣结果</option><option value="interested">感兴趣</option><option value="maybe">待确认</option><option value="not_interested">不感兴趣</option></select>
           <button class="tool-button" id="batchModeBtn" title="批量选择论文">选择</button>
         </section>
         <div id="batchBar" class="batch-bar" hidden>
           <span><b id="batchCount">0</b> 篇已选择</span>
-          <div><button class="tool-button" id="selectAllBtn">全选</button><button class="tool-button" id="clearBatchBtn">清除</button><button class="danger-button" id="batchIgnoreBtn" disabled>标记不感兴趣</button></div>
+          <div><button class="tool-button" id="selectAllBtn">全选</button><button class="tool-button" id="clearBatchBtn">清除</button><button class="tool-button" id="classifyBatchBtn" disabled>分析兴趣</button><button class="danger-button" id="batchIgnoreBtn" disabled>标记不感兴趣</button></div>
         </div>
         <div class="list-head"><span id="searchMeta">正在读取论文库</span><span>按年份与来源排序</span></div>
         <div id="paperList" class="paper-list" aria-live="polite"></div>
@@ -59,7 +61,7 @@
       </section>
 
       <section id="digest" class="view">
-        <div class="section-head"><div><p class="eyebrow">WEEKLY BRIEF</p><h2>研究早报</h2></div><button class="tool-button" id="digestRefresh">刷新</button></div>
+        <div class="section-head"><div><p class="eyebrow">WEEKLY BRIEF</p><h2>本周早报</h2></div><button class="tool-button" id="digestRefresh">刷新</button></div>
         <article class="digest-sheet"><pre id="digestText">正在读取早报</pre></article>
       </section>
 
@@ -96,7 +98,7 @@ const labels = {
   pdf: {none:'无 PDF', needs_upload:'待上传', downloaded:'已下载', download_failed:'下载失败', cold:'冷存储'},
   parse: {none:'未解析', queued:'排队', uploading:'上传中', parsing:'解析中', downloading:'下载中', done:'已解析', failed:'失败'}
 };
-let tagLabels = {}, sourceLabels = {}, currentView = 'papers';
+let tagLabels = {}, sourceLabels = {}, currentView = 'papers', interestProfiles = [];
 
 function esc(value){ return String(value || '').replace(/[&<>"']/g, char => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[char])); }
 function label(value, map){ return map[value] || value || '-'; }
@@ -125,15 +127,22 @@ async function loadFacets(){
   try { const data=await api('/api/facets');
     tagLabels=Object.fromEntries((data.tags||[]).map(item=>[item.value,item.label]));
     sourceLabels=Object.fromEntries((data.sources||[]).map(item=>[item.value,item.label]));
-    [['tag',data.tags,'全部主题'],['year',data.years,'全部年份'],['source',data.sources,'全部来源'],['status',data.statuses,'全部状态']].forEach(([id,items,first])=>{
+    [['tag',data.tags,'全部标签'],['year',data.years,'全部年份'],['source',data.sources,'全部来源'],['status',data.statuses,'全部状态']].forEach(([id,items,first])=>{
       const select=$(id), selected=select.value;
       select.innerHTML=`<option value="">${first}</option>`+(items||[]).map(item=>`<option value="${esc(item.value)}">${esc(item.label)}</option>`).join('');
       select.value=selected;
     });
   } catch(error) { toast('筛选项读取失败'); }
 }
+async function loadInterestProfiles(){
+  try { const data=await api('/api/interest/profiles'); interestProfiles=data.items||[];
+    const select=$('interestProfile'), selected=select.value || data.default || '';
+    select.innerHTML='<option value="">兴趣画像</option>'+interestProfiles.map(item=>`<option value="${esc(item.id)}">${esc(item.name)}</option>`).join('');
+    select.value=selected;
+  } catch(error) { toast('兴趣画像读取失败'); }
+}
 async function searchPapers(){
-  const query=new URLSearchParams({q:$('q').value.trim(),tag:$('tag').value,year:$('year').value,source:$('source').value,status:$('status').value,limit:'50'});
+  const query=new URLSearchParams({q:$('q').value.trim(),tag:$('tag').value,year:$('year').value,source:$('source').value,status:$('status').value,interest_profile:$('interestProfile').value,interest_label:$('interestLabel').value,limit:'50'});
   try { const data=await api('/api/papers?'+query); $('searchMeta').textContent=`${data.total} 篇论文，显示 ${data.items.length} 篇`;
     $('paperList').innerHTML=data.items.map(renderPaper).join('') || '<div class="empty-state">没有匹配的论文</div>';
   } catch(error) { toast('论文库读取失败：'+error.message); }
@@ -141,23 +150,24 @@ async function searchPapers(){
 function renderPaper(paper){
   const title=paper.title_zh || paper.title, parsed=paper.parse_status==='done', tags=(paper.tags||[]).map(tag=>`<span class="tag">${esc(label(tag,tagLabels))}</span>`).join('');
   const action=parsed
-    ? `<a class="primary-button compact" href="/reader/${encodeURIComponent(paper.id)}?ask=1#ask">阅读</a>`
+    ? `<a class="primary-button compact" href="/reader/${encodeURIComponent(paper.id)}?ask=1#ask">阅读 + 提问</a>`
     : `<button class="primary-button compact" data-action="queue" data-id="${esc(paper.id)}">想读</button>`;
   return `<article class="paper-row">
     <label class="select-paper"><input type="checkbox" value="${esc(paper.id)}"><span></span></label>
     <div class="paper-main"><div class="paper-title">${parsed?`<a href="/reader/${encodeURIComponent(paper.id)}">${esc(title)}</a>`:esc(title)}</div>
       ${paper.title_zh?`<div class="paper-original">${esc(paper.title)}</div>`:''}
       <div class="paper-meta">${esc(paper.year || '年份未知')} <i></i> ${esc(paper.venue || '未标注来源')} <i></i> ${esc(label(paper.source,sourceLabels))}</div>
-      <div class="tag-row">${tags}<span class="state state-${esc(paper.status)}">${esc(label(paper.status,labels.status))}</span></div>
+      <div class="tag-row">${tags}<span class="state state-${esc(paper.status)}">${esc(label(paper.status,labels.status))}</span>${paper.interest_label?`<span class="state">${esc({interested:'感兴趣',maybe:'待确认',not_interested:'不感兴趣'}[paper.interest_label]||paper.interest_label)}</span>`:''}</div>
     </div>
     <div class="paper-status"><span>PDF</span><b>${esc(label(paper.pdf_status,labels.pdf))}</b><span>解析</span><b>${esc(label(paper.parse_status,labels.parse))}</b></div>
     <div class="paper-actions">${action}<button class="quiet-button" data-action="ignore" data-id="${esc(paper.id)}">忽略</button></div>
   </article>`;
 }
 function selectedIds(){ return [...document.querySelectorAll('#paperList input[type=checkbox]:checked')].map(node=>node.value); }
-function updateBatch(){ const count=selectedIds().length; $('batchCount').textContent=count; $('batchIgnoreBtn').disabled=!count; }
+function updateBatch(){ const count=selectedIds().length; $('batchCount').textContent=count; $('batchIgnoreBtn').disabled=!count; $('classifyBatchBtn').disabled=!count; }
 function toggleBatch(){ const on=$('papers').classList.toggle('batch-mode'); $('batchBar').hidden=!on; $('batchModeBtn').textContent=on?'完成':'选择'; if(!on){ document.querySelectorAll('#paperList input').forEach(node=>node.checked=false); updateBatch(); } }
 async function setStatus(ids,status){ try { await api('/api/papers/batch-status',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({ids,status})}); toast('状态已更新'); searchPapers(); loadStats(); } catch(error){ toast(error.message); } }
+async function classifyInterest(){ const ids=selectedIds(); if(!ids.length) return; try { const data=await api('/api/interest/classify',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({profile:$('interestProfile').value||undefined,ids})}); toast(`已完成 ${data.count} 篇兴趣分析`); searchPapers(); } catch(error){ toast('兴趣分析失败：'+error.message); } }
 async function queueOne(id){ try { await api('/api/queue',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({ids:[id]})}); toast('已加入阅读队列'); setTimeout(()=>show('queue'),350); } catch(error){ toast(error.message); } }
 async function loadQueue(){ try { const data=await api('/api/queue'); $('queueList').innerHTML=data.items.map(renderQueue).join('') || '<div class="empty-state">阅读队列为空</div>'; } catch(error){ toast('队列读取失败：'+error.message); } }
 function renderQueue(paper){ const tasks=['download_pdf','parse_pdf','translate_full'].map(type=>`<span class="pipeline-step ${paper.tasks[type]||''}">${({download_pdf:'下载',parse_pdf:'解析',translate_full:'翻译'})[type]}<b>${label(paper.tasks[type],labels.task)}</b></span>`).join(''); const ready=paper.parse_status==='done';
@@ -167,11 +177,11 @@ async function uploadPdf(event){ event.preventDefault(); const file=$('pdfFile')
 
 document.querySelectorAll('.nav-item').forEach(button=>button.addEventListener('click',()=>show(button.dataset.view)));
 $('refreshButton').addEventListener('click',()=>show(currentView));
-['q','tag','year','source','status'].forEach(id=>$(id).addEventListener(id==='q'?'keydown':'change',event=>{ if(id!=='q'||event.key==='Enter') searchPapers(); }));
-$('batchModeBtn').addEventListener('click',toggleBatch); $('selectAllBtn').addEventListener('click',()=>{document.querySelectorAll('#paperList input').forEach(node=>node.checked=true);updateBatch();}); $('clearBatchBtn').addEventListener('click',()=>{document.querySelectorAll('#paperList input').forEach(node=>node.checked=false);updateBatch();}); $('batchIgnoreBtn').addEventListener('click',()=>setStatus(selectedIds(),'ignored'));
+['q','tag','year','source','status','interestProfile','interestLabel'].forEach(id=>$(id).addEventListener(id==='q'?'keydown':'change',event=>{ if(id!=='q'||event.key==='Enter') searchPapers(); }));
+$('batchModeBtn').addEventListener('click',toggleBatch); $('selectAllBtn').addEventListener('click',()=>{document.querySelectorAll('#paperList input').forEach(node=>node.checked=true);updateBatch();}); $('clearBatchBtn').addEventListener('click',()=>{document.querySelectorAll('#paperList input').forEach(node=>node.checked=false);updateBatch();}); $('classifyBatchBtn').addEventListener('click',classifyInterest); $('batchIgnoreBtn').addEventListener('click',()=>setStatus(selectedIds(),'ignored'));
 $('paperList').addEventListener('change',event=>{if(event.target.matches('input[type=checkbox]'))updateBatch();}); $('paperList').addEventListener('click',event=>{const button=event.target.closest('button[data-action]');if(!button)return;button.dataset.action==='queue'?queueOne(button.dataset.id):setStatus([button.dataset.id],'ignored');});
 $('queueRefresh').addEventListener('click',loadQueue); $('digestRefresh').addEventListener('click',loadDigest); $('uploadForm').addEventListener('submit',uploadPdf);
-loadFacets(); loadStats(); searchPapers();
+loadFacets(); loadInterestProfiles(); loadStats(); searchPapers();
 </script>
 </body>
 </html>
