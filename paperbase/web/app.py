@@ -277,7 +277,8 @@ def create_app(config_path: str | None = None) -> FastAPI:
         return {
             "ok": True,
             "papers": count_papers(conn),
-            "db": str(paths.db_path),
+            "database_backend": conn.backend,
+            "db": "postgresql" if conn.backend == "postgresql" else str(paths.db_path),
             "disk_used_ratio": round(usage.used / usage.total, 4),
             "disk_free_gb": round(usage.free / 1024 ** 3, 2),
         }
