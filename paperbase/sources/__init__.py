@@ -13,6 +13,7 @@ from paperbase.db import bulk_upsert_papers, count_papers, get_meta, set_meta, u
 from paperbase.models import FetchStatus, PaperDraft, PaperSource, SourceState
 from paperbase.sources.acl import ACLSource
 from paperbase.sources.arxiv import ArxivSource
+from paperbase.sources.crossref import CrossrefSource
 from paperbase.sources.openalex import OpenAlexSource
 
 @dataclass(frozen=True)
@@ -86,6 +87,19 @@ def _build_openalex(config: dict) -> OpenAlexSource:
 
 register_source("acl", _build_acl, description="ACL Anthology conference proceedings")
 register_source("openalex", _build_openalex, description="OpenAlex journal works")
+
+
+def _build_crossref(config: dict) -> CrossrefSource:
+    crossref_cfg = config.get("crossref", {}) or {}
+    return CrossrefSource(
+        issns=crossref_cfg.get("issns"),
+        years=crossref_cfg.get("years") or config.get("fetch", {}).get("years", []),
+        max_results=int(crossref_cfg.get("max_results", 2000)),
+        venue=str(crossref_cfg.get("venue", "NLE")),
+    )
+
+
+register_source("crossref", _build_crossref, description="Crossref supplement for NLE")
 
 
 def _build_arxiv(config: dict) -> ArxivSource:

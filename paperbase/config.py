@@ -76,9 +76,15 @@ DEFAULTS: dict[str, Any] = {
     },
     "fetch": {
         "schedule": "0 2 * * 1",
-        "sources": ["acl", "openalex"],
+        "sources": ["acl", "openalex", "crossref"],
         "years": [2024, 2025, 2026],
         "concurrency": 4,
+    },
+    "crossref": {
+        "issns": ["1351-3249", "1469-8110"],
+        "years": [2025, 2026],
+        "venue": "NLE",
+        "max_results": 2000,
     },
     "digest": {
         "due_time": "03:00",

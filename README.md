@@ -5,7 +5,7 @@
 ## 当前能力
 
 - PostgreSQL 元数据库，Docker Compose 一键启动；Markdown、PDF 使用持久化卷保存
-- ACL Anthology、OpenAlex、arXiv 采集器，支持增量抓取和断点状态
+- ACL Anthology、OpenAlex 期刊和 Crossref/NLE 采集器，支持增量抓取和断点状态
 - 可扩展采集插件：内置采集器通过注册表统一调用，第三方可通过 `paperbase.sources` entry point 注册
 - 可配置的兴趣画像：规则评分结合可选 LLM 复核，支持不同人的关键词、排除词和分类结果
 - PDF 自动下载、MinerU 解析、标题/摘要及全文翻译，带哈希缓存和预算限制
@@ -35,7 +35,7 @@ docker compose logs -f web worker
 ## 常用命令
 
 ```bash
-docker compose exec web paper fetch --sources acl arxiv
+docker compose exec web paper fetch --sources acl openalex crossref
 docker compose exec web paper interest --profile research
 docker compose exec web paper stats
 docker compose exec web paper worker --once

@@ -11,7 +11,7 @@ data_dir = "./data"                 # SQLite + md + pdf 的根目录
 
 [fetch]
 schedule = "0 2 * * 1"             # 每周一凌晨 02:00 抓取（cron：分 时 日 月 周）
-sources = ["acl", "openalex"]       # 可选：acl / openalex / arxiv
+sources = ["acl", "openalex", "crossref"]  # 旧爬虫对应的采集器；arxiv 需显式加入
 years = [2024, 2025, 2026]          # ACL 抓取年份范围
 concurrency = 4
 
@@ -39,7 +39,13 @@ enabled = false
 review_all = false                  # true 时逐篇 AI 审核，成本更高
 candidate_min_matches = 1
 
-[arxiv]                             # 可选数据源
+[crossref]                          # 旧 fetch_nle.py 的 NLE 补充
+issns = ["1351-3249", "1469-8110"]
+years = [2025, 2026]
+venue = "NLE"
+max_results = 2000
+
+[arxiv]                             # 可选实验数据源，不在默认 sources 中
 categories = ["cs.CL", "cs.AI", "cs.IR"]
 keywords = ["knowledge graph", "information extraction", "question answering"]
 max_results = 200

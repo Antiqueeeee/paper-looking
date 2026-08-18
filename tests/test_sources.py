@@ -9,6 +9,7 @@ from paperbase.db import count_papers, get_paper, init_db, upsert_paper
 from paperbase.models import PaperDraft
 from paperbase.sources.acl import parse_volume_papers
 from paperbase.sources.arxiv import parse_arxiv_atom
+from paperbase.sources.crossref import strip_tags, work_to_draft as crossref_work_to_draft
 from paperbase.sources.import_legacy import discover_legacy_files, import_legacy
 from paperbase.sources.openalex import rebuild_abstract, work_to_draft
 
@@ -89,6 +90,23 @@ def test_openalex_work_to_draft():
     assert d.abstract == "Graph RAG works"
     assert d.authors == ["Alice A"]
     assert d.pdf_url == "https://example.org/paper.pdf"
+
+
+def test_crossref_work_to_draft():
+    draft = crossref_work_to_draft({
+        "DOI": "10.1234/ABC",
+        "title": ["NLE paper"],
+        "author": [{"given": "Ada", "family": "Lovelace"}],
+        "abstract": "<jats:p>Graph <b>RAG</b></jats:p>",
+        "published": {"date-parts": [[2025, 2, 3]]},
+        "link": [{"URL": "https://example.org/paper.pdf", "content-type": "application/pdf"}],
+    })
+    assert draft is not None
+    assert draft.id == "10.1234/abc"
+    assert draft.source == "crossref"
+    assert draft.abstract == "Graph RAG"
+    assert draft.pdf_url == "https://example.org/paper.pdf"
+    assert strip_tags("<jats:p>hello</jats:p>") == "hello"
 
 
 def test_rebuild_abstract_sorts_positions():

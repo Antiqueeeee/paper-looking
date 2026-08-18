@@ -139,7 +139,7 @@ def build_parser() -> argparse.ArgumentParser:
     p_init.set_defaults(func=cmd_init)
 
     p_fetch = sub.add_parser("fetch", help="incrementally fetch one or more sources")
-    p_fetch.add_argument("--sources", nargs="+", metavar="SOURCE", help="source plugin ids (for example: acl arxiv)")
+    p_fetch.add_argument("--sources", nargs="+", metavar="SOURCE", help="source plugin ids (for example: acl openalex crossref)")
     p_fetch.add_argument("--since", help="ISO datetime lower bound (optional)")
     p_fetch.set_defaults(func=cmd_fetch)
 
