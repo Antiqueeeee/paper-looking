@@ -1,58 +1,114 @@
-# PaperBase Docker 部署手册
+# PaperBase Docker Deployment
 
-## 准备
+This deployment consists of PostgreSQL (`db`), the web application (`web`),
+and the background worker (`worker`). Named Docker volumes retain database,
+PDF, and Markdown data across container recreation.
 
-在 VPS 安装 Docker Engine 与 Compose 插件，然后克隆项目：
+## 1. Install Docker and Compose
+
+Install Docker Engine from the official Docker repository. The Compose v2
+plugin (`docker compose`) is preferred, but the project also supports the
+legacy standalone binary (`docker-compose`). All commands below use the
+repository wrapper, which selects whichever is installed:
+
+```bash
+./ops/compose.sh version
+```
+
+If neither command is available, install the Compose plugin before continuing.
+
+## 2. Configure Docker Registry Mirrors
+
+The current development machine uses these Docker Hub mirrors, recorded in
+[`ops/docker-daemon.json.example`](docker-daemon.json.example):
+
+```json
+{
+  "registry-mirrors": [
+    "https://docker.1ms.run",
+    "https://docker.xuanyuan.me"
+  ]
+}
+```
+
+For a server without `/etc/docker/daemon.json`, install that file, then restart
+Docker. Restarting Docker briefly stops running containers.
+
+```bash
+sudo install -d -m 0755 /etc/docker
+sudo install -m 0644 ops/docker-daemon.json.example /etc/docker/daemon.json
+sudo systemctl restart docker
+docker info --format '{{json .RegistryConfig.Mirrors}}'
+```
+
+If `/etc/docker/daemon.json` already exists, back it up and merge only the
+`registry-mirrors` field into its existing JSON before restarting Docker. Do
+not replace unrelated daemon settings. Use only mirrors trusted by the server
+operator; a mirror is infrastructure outside this repository.
+
+## 3. Configure and Start
 
 ```bash
 sudo mkdir -p /opt/paper && sudo chown "$USER" /opt/paper
 cd /opt/paper
-git clone <repository-url> .
+git clone git@github.com:Antiqueeeee/paper-looking.git .
 cp .env.example .env
 cp config.example.toml config.toml
+chmod +x ops/compose.sh
 ```
 
-编辑 `.env`，至少设置高强度的 `POSTGRES_PASSWORD`，并按需填写
-`DEEPSEEK_API_KEY`、`MINERU_API_KEY`。数据库默认使用 Compose 内的 `db`
-服务。密码含 `@`、`:` 等 URL 保留字符时，在 `.env` 中设置完整、URL 编码后的
-`DATABASE_URL`。
+Edit `.env`: set a strong `POSTGRES_PASSWORD` and required API keys. Compose
+derives `DATABASE_URL` from those PostgreSQL variables. If the password has
+`@`, `:`, `/`, or another URL-reserved character, set an explicit URL-encoded
+`DATABASE_URL` instead.
 
-## 启动与验收
+Build and start locally on the server:
 
 ```bash
-docker compose up -d --build
-docker compose logs -f web worker
-curl http://127.0.0.1:8000/api/health
-docker compose exec web paper fetch
+./ops/compose.sh up -d --build
+./ops/compose.sh ps
+./ops/compose.sh logs -f web worker
+curl --fail http://127.0.0.1:8000/api/health
+./ops/compose.sh exec web paper fetch
 ```
 
-首次启动会自动执行 PostgreSQL schema migration。Web 和 worker 共享数据库、
-Markdown 与 PDF 卷；不要分别手动创建数据库文件。推荐使用 Tailscale 或反向代理
-暴露 Web 服务，而不是直接公开 8000 端口。
+The first start applies PostgreSQL migrations automatically. Do not create a
+separate SQLite database. Keep port 8000 private behind Tailscale or a reverse
+proxy when exposing the web UI.
 
-## 更新
+## 4. Update and Operate
 
-本地构建部署：
+For the local Dockerfile build:
 
 ```bash
-git pull
-docker compose up -d --build
+git pull --ff-only
+./ops/compose.sh up -d --build
+./ops/compose.sh ps
 ```
 
-已发布镜像部署：在 `.env` 设置 `PAPERBASE_IMAGE=registry.example/paperbase:tag`，然后：
+For a published application image, set `PAPERBASE_IMAGE=registry.example/paperbase:tag`
+in `.env`, then run:
 
 ```bash
-docker compose pull
-docker compose up -d
+./ops/compose.sh pull
+./ops/compose.sh up -d
 ```
 
-## 备份
+Inspect failures with `./ops/compose.sh logs --tail=200 web worker`. Use
+`./ops/compose.sh down` only for service shutdown: named volumes remain. Do
+not add `-v` unless intentionally deleting all database and paper data.
 
-每天备份 PostgreSQL，并另行备份 Docker 卷中的 Markdown/PDF：
+## 5. Back Up and Restore
+
+Back up PostgreSQL before an update and separately preserve the `paper_data`
+and `paper_files` volumes containing generated Markdown and PDFs:
 
 ```bash
+mkdir -p /backup/paperbase
 set -a; . ./.env; set +a
-docker compose exec -T db pg_dump -U "$POSTGRES_USER" "$POSTGRES_DB" > /backup/paperbase.sql
+./ops/compose.sh exec -T db pg_dump -U "$POSTGRES_USER" "$POSTGRES_DB" \
+  > /backup/paperbase/paperbase-$(date +%F).sql
 ```
 
-恢复时使用 `psql` 导入该文件到空数据库。更新镜像前先验证备份可读。
+Restore into an empty database with `psql`; verify the dump can be read before
+relying on it as a backup.

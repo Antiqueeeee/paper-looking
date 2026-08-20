@@ -13,23 +13,25 @@
 
 ## 快速开始
 
-需要 Docker Engine 和 Compose 插件：
+需要 Docker Engine；Compose v2 插件（`docker compose`）优先，也兼容旧版
+`docker-compose`。仓库的 `ops/compose.sh` 会自动选择可用命令：
 
 ```bash
 cp .env.example .env                 # 设置 POSTGRES_PASSWORD 和所需 API keys
 cp config.example.toml config.toml   # 按需调整来源、兴趣画像和模型
-docker compose up -d --build
-docker compose exec web paper fetch  # 首次抓取论文；数据库会自动迁移
+chmod +x ops/compose.sh
+./ops/compose.sh up -d --build
+./ops/compose.sh exec web paper fetch  # 首次抓取论文；数据库会自动迁移
 ```
 
 打开 <http://localhost:8000>。查看服务日志：
 
 ```bash
-docker compose logs -f web worker
+./ops/compose.sh logs -f web worker
 ```
 
 生产环境可以把 `PAPERBASE_IMAGE` 设置为已发布的镜像，然后执行
-`docker compose pull && docker compose up -d`。若数据库密码包含 URL 保留字符，
+`./ops/compose.sh pull && ./ops/compose.sh up -d`。若数据库密码包含 URL 保留字符，
 请在 `.env` 中提供完整且已编码的 `DATABASE_URL`。
 
 ## 常用命令
@@ -62,4 +64,4 @@ python -m pip install -e '.[dev]'
 python -m pytest -q
 ```
 
-生产部署、备份和更新步骤见 [`ops/deploy.md`](ops/deploy.md)。贡献规范见 [`AGENTS.md`](AGENTS.md)。
+生产部署、镜像源、备份和更新步骤见 [`ops/deploy.md`](ops/deploy.md)。贡献规范见 [`AGENTS.md`](AGENTS.md)。
